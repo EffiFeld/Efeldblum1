@@ -7,4 +7,1521 @@ tags: ["R Markdown", "plot", "regression"]
 ---
 
 
-Please please work
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE, message=FALSE, 
+                      results='show', cache=FALSE, autodep=FALSE)
+
+knitr::opts_knit$set(root.dir = 'data/transit/')
+```
+
+
+```{r, include = FALSE, message= FALSE, warning = FALSE}
+# include all packages here if nec.
+library(kableExtra)
+library(tigris)
+library(tidyverse)
+library(leaflet)
+library(sp)
+library(gridExtra)
+library(DT)
+library(data.table)
+library(rowr)
+
+```
+
+
+```{r shapefiles, echo = FALSE,  message= FALSE, warning = FALSE, error= FALSE, results = "hide"}
+philly <- tracts(state = "PA", county = "Philadelphia")
+dc <- tracts(state = "District of Columbia")
+ny <- tracts(state = "NY", 
+             county = c("New York County", "Bronx County",
+                        "Kings County", "Queens County", "Richmond County")  )
+
+```
+
+```{r dataload, echo = FALSE,  message= FALSE, warning = FALSE, error= FALSE, results = "hide"}
+
+load("GET_url_test.RData")
+load("content_url_test.RData")
+load("final_url_test.RData")
+load("json_url_test.RData")
+
+load("googleway_raw_data.RData")
+
+load("philly_300_points.RData")
+
+load("aplay_PH.RData")
+load("aplay_DC.RData")
+load("aplay_NY.RData")
+
+```
+
+```{r base_ggplots, echo = FALSE,  message= FALSE, warning = FALSE, error= FALSE, results = "hide"}
+gg_ph <- 
+  ggplot() +
+  geom_polygon(data = philly, aes(long, lat, group = group), 
+               fill = "#051633", color="#051633") +
+  coord_map() +
+  labs(x = NULL, y = NULL) +
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y=element_blank(),
+        panel.background = element_rect(fill = '#e8edf7'),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+
+gg_ny <- 
+  ggplot() +
+  geom_polygon(data = ny, aes(long, lat, group = group), 
+               fill = "#051633", color="#051633") +
+  coord_map() +
+  labs(x = NULL, y = NULL) +
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y=element_blank(),
+        panel.background = element_rect(fill = '#e8edf7'),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+
+gg_dc <- 
+  ggplot() +
+  geom_polygon(data = dc, aes(long, lat, group = group), 
+               fill = "#051633", color="#051633") +
+  coord_map() +
+  labs(x = NULL, y = NULL) +
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y=element_blank(),
+        panel.background = element_rect(fill = '#e8edf7'),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+
+
+
+```
+
+
+# Part 1: The Idea  {-}
+
+I was recently in a car with one of my best friends and his new wife[^1] (also a good friend of mine). We were making our way back from our parents joint 4th of July BBQ in Philadelphia towards Washington DC where we had all attended University. These two friends of mine were coming back down to prepare for their fast approaching move to NYC [^2].
+
+Car talk moved towards talking about different public transit systems we've used both around the country and world. Being poor students and recent graduates and all moving in the near future, we are three of us particulary interested in our city's system. This was, of course, mostly complaining about the systems and comparing their negatives. This led me to an, I think, interesting question:
+
+If you were to be dropped in a city at a random point within that cities limit and given another random point to get to, again within the city limits, which city would this be the easiest in?
+
+I will here be trying to begin answering that question. In order to simplify the scope of this exploration, I am limiting myself to looking at New York City, Washington DC, and Philadelphia[^3].
+
+
+
+##Plan of Attack 1 {-}
+###Packages  {-}
+This analysis will be occuring entirely in R, so the first step is to load up some necessary packages to get started.
+
+###Let's Get Started {-}
+
+The first idea I had in solving this was to create a box around each city, get the longitude-latitude codes of the two corners, then get random points using `points <-  runif(num_points, lower_long/lat_barrier, upper_long/lat_barrier)`.
+
+As an example:
+```{r}
+x <- data.frame( x= runif(3, 1,50), y = runif(3, 51, 100))
+```
+```{r, echo=FALSE}
+x %>%
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE,
+                position = "float_right")
+```
+
+Runif will return to us a specified set of random numbers (here `3`) from a uniform distribution. It is a similar function to RandBetween in Excel. You can see the results in the table to the right.  
+
+So, I needed to get approximated bounded corners for the city. The way I decided to do this was to use googlemaps functionality of finding longitude and latitude of any point clicked.
+
+```{r echo=FALSE, out.width = '100%', eval = FALSE}
+knitr::include_graphics("google_maps_whats_here.png")
+
+```
+```{r echo=FALSE, out.width = '35%', eval = FALSE}
+knitr::include_graphics("Untitled.png")
+```
+
+<br>
+
+So, after some slight maneuvering, we can use the two sets of coordinates to create this:
+```{r echo = FALSE}
+leaflet(philly) %>%
+    addProviderTiles(providers$Stamen.Toner) %>%
+  addRectangles(
+    lng1=-75.381713, lat1=40.143756,
+    lng2=-74.949813, lat2=39.885019, fillColor  = "transparent"
+  )%>%
+  addPolygons(fillColor = "#8a07ef", weight = 1, smoothFactor = 0.2,
+              opacity = 0.5 ,color = "white")
+
+```
+
+Great! Okay, so we can use our coordinate codes of `-75.381713, 40.143756` and `-74.949813, 39.885019` within our `runif` function. As a test, I'll generate 100 random points and map them out. Below I've provided a sample of the points in a table. 
+
+```{r}
+longitude <-runif(100, -75.381713, -74.949813)
+latitude <- runif(100, 39.885019, 40.143756)
+my_df <- data.frame(longitude, latitude)
+```
+
+```{r, echo=FALSE}
+my_df[1:10,] %>%
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped"), full_width = FALSE,
+                position = "float_right")
+```
+
+```{r echo = FALSE}
+
+leaflet(philly) %>%
+  addProviderTiles(providers$Stamen.Toner) %>%
+  addRectangles(
+    lng1=-75.381713, lat1=40.143756,
+    lng2=-74.949813, lat2=39.885019, fillColor  = "transparent"
+  )%>%
+  addPolygons(fillColor = "#8a07ef", weight = 1, smoothFactor = 0.2,
+              opacity = 0.5 ,color = "white")%>%
+  addCircleMarkers(data=my_df,radius =1.5,
+                   color= "#ff0505")
+
+```
+
+## A Clear Issue {-}
+This is obviously an issue.  
+Cities are not specificially oriented in the plot of the Earth's coordinate system, they are a "random" human choice. Even worse (becuase with motivation, the perspective of the graph can be changed), cities are weird shapes. Humans shaped these amazing metropolises that span whatever land they decide. A very cool thought, but highly inconvenient for me.
+
+# Part 2: Shapefiles and Progress {-}
+
+
+```{r echo=FALSE, out.width = '50%',eval = FALSE}
+knitr::include_graphics("Septa_logo.png")
+
+```
+
+
+The main lesson from part 1 is that I'm going to have to be a little less lazy in this project. The minitua is that I needed:
+ 
+   1. a way to graph only the city limits itself  
+   2. a way to generate random points within that irregular polygon
+
+Googling told me that what I needed was a shapefile, "The shapefile format is a popular geospatial vector data format for geographic information system (GIS) software...The shapefile format can spatially describe vector features: points, lines, and polygons, representing, for example, water wells, rivers, and lakes."[^4]
+
+At first, it looked like this required me to download a bunch of files from the internet and load them all into R. At first because of the blessed package Tigris which allows users to download shapefiles from the US Census Bureau.
+
+The below code is using the TIGRIS package to grab the files for Philadelphia, New York City, and Washington D.C.
+```{r echo = FALSE, message= FALSE, warning = FALSE, fig.width=10, fig.height=5}
+
+grid.arrange(gg_ph, gg_ny, gg_dc, ncol = 3)
+
+```
+Okay great - we have our city polygons.
+## Getting Random Points {-}
+To work with the shapefiles in R, the package `sp` was used. This package has a great function `spsample` which magically spits out the random numbers. At first, I still thought I'd have to figure out how to divide the cities into shapes I could find random points within then recombine.
+
+I thought a good starting point would be to get 300 points, 150 origin and 150 destination, and find the directions between them. I'll show an example of that workflow using only Philadelphia.
+
+
+```{r, cache = TRUE}
+number_sample <- 150  #This is the number of trips we want to test
+city_file <- philly #This is what city to get points for
+
+origin <- spsample(city_file, n = number_sample, "random") %>%
+  as.data.frame()
+origin <- origin %>%
+  select(startLat = y , startLon = x) %>%
+  mutate(trip_id = 1:nrow(origin))
+
+
+destination <- spsample(city_file, n = number_sample, "random") %>%
+  as.data.frame()
+destination <- destination %>%
+  select(endLat = y , endLon = x) %>%
+  mutate(trip_id = 1:nrow(destination))
+
+#To combine the origins and destinations
+trip <- left_join(origin,destination,by = "trip_id") %>%
+  select(trip_id,startLat, startLon, endLat, endLon)
+```
+
+```{r, echo=FALSE,warning = FALSE}
+trip1 <- trip %>%
+  select("start latitude" = startLat, "start longitude" = startLon,  "end latitude" = endLat, "end longitude" = endLon )
+
+datatable(trip1, options = list(
+  dom = 't'
+))
+```
+<br>
+
+```{r, echo = FALSE}
+origin <- origin %>%
+  select(latitude = startLat, longitude = startLon, trip_id)%>%
+  mutate(type = rep("origin"))
+destination <- destination %>%
+  select(latitude = endLat, longitude = endLon, trip_id)%>%
+  mutate(type = rep("destination"))
+
+loc_both <- rbind(origin, destination) 
+
+
+city_origin_destination <- gg_ph + 
+  geom_point(data = loc_both, aes(longitude, latitude, group = type, color =type), size =  1.5)+
+  scale_color_manual(values=c("#db7918", "#1dbdf7"))
+
+city_origin_destination  
+```
+
+Now if we want to view the "routes" themselves if the one went as the bird flew.
+
+```{r, echo = FALSE}
+
+
+trip_a2b_lines <- city_origin_destination +
+  geom_path(data=loc_both, aes(x=longitude, y=latitude, group=trip_id), size=0.5, alpha=0.5, color = "white")
+
+trip_a2b_lines
+```
+
+##Getting Routes {-}
+
+So now we have this shit.
+great package
+google way // attaches to google api
+
+```{r, echo = FALSE}
+#loading a predone dataframe so that the document doesn't
+#ping the API everytime I reknit...or ever really
+
+```
+
+```{r, eval = FALSE}
+googleway_raw_data <- lapply(1:nrow(trip), function(x){
+  
+  google_distance(origin = (locations[x, 2:3]),
+                  destination = (locations[x, 4:5]),
+                  key = key,
+                  mode = "transit")
+  
+})
+
+```
+This results in a list of lists where each holds the data of 1 trip.
+```{r}
+googleway_raw_data[[5]] #looking at the fifth list, which is also the fifth set of coordinates
+```
+
+So, some serious data munging is needed... *cue the montage music*
+
+```{r, warning= FALSE}
+foo <- do.call(what = "rbind",
+               args = lapply(googleway_raw_data, as.data.frame))
+
+foo <-  separate(foo, elements, into = c("km", "value", "duration", 
+                    "value2", "currency", "cost", "uk", "status2"), ",")
+
+
+foo <- 
+  select(foo, destination_addresses, origin_addresses, km, duration, cost, status)
+head(foo)
+```
+
+Now to get rid of all that annoying fluff[^5]
+
+```{r}
+##source of numextract function: http://stla.github.io/stlapblog/posts/Numextract.html
+numextract <- function(string){ 
+  str_extract(string, "\\-*\\d+\\.*\\d*")
+} 
+
+foo$km <- lapply(foo$km, numextract)%>%
+  as.numeric()
+foo$cost <- substring(foo$cost, 11)
+foo$cost <- substr(foo$cost,1,nchar(foo$cost)-1) %>%
+  as.numeric()
+foo$duration <- substring(foo$duration, 26)
+foo$duration <- substr(foo$duration,1,nchar(foo$duration)-1)
+
+
+#Splitting up duration from XX hour(s) XX minute(s), to seperate columns
+
+foo1 <- separate(foo, duration, into = c("hours", "minutes"), sep = -7)
+foo1$hours <- gsub("[^0-9]", "", foo1$hours)
+foo1$minutes <- gsub("[^0-9]", "",foo1$minutes)
+foo1$hours <- as.numeric(foo1$hours)
+foo1$minutes <- as.numeric(foo1$minutes)
+
+#for trips that take less than an hour
+#doesnt murk with invalid trips because of other apparent NAS
+foo1$hours[is.na(foo1$hours)] <- 0
+
+#creating a total minutes section
+foo1 <- foo1 %>% 
+  mutate(duration_minutes = (hours*60)+minutes)%>%
+  mutate(trip_id = 1:nrow(foo1))
+
+#merging with trip to have coordinates
+full_AB_GOOGLE <- left_join(foo1, trip,by = "trip_id")
+
+```
+
+
+```{r, echo=FALSE,warning = FALSE}
+full_AB_GOOGLE1 <- full_AB_GOOGLE
+
+full_AB_GOOGLE1$startLat <- round(full_AB_GOOGLE1$startLat, digits = 4)
+full_AB_GOOGLE1$startLon <- round(full_AB_GOOGLE1$startLon, digits = 4)
+full_AB_GOOGLE1$endLat <- round(full_AB_GOOGLE1$endLat, digits = 4)
+full_AB_GOOGLE1$endLon <- round(full_AB_GOOGLE1$endLon, digits = 4)
+full_AB_GOOGLE1 <- full_AB_GOOGLE1 %>%
+  select(origin_addresses, destination_addresses, duration_minutes, km, cost, startLat, startLon, endLat, endLon)
+
+datatable(full_AB_GOOGLE1, options = list(
+  dom = 'ltp'
+))
+```
+
+## Our first "good" data {-}
+Let's take a quick peak at what the data tells us before moving on.
+
+```{r warning = FALSE}
+#selecting a few choice variables and adding miles
+foo <- full_AB_GOOGLE %>%
+  select(trip_id, kilometers = km, duration = duration_minutes, cost)%>%
+  mutate(miles = round(kilometers/1.609344, digits =1))
+
+miles <- as.data.frame(c(summary(foo$miles)))
+duration <-as.data.frame(c(summary(foo$duration)))
+summary1 <- cbind(miles, duration)%>%
+  round(digits =2)
+colnames(summary1) <- c("miles", "durations")
+
+
+summary1 %>%
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE,
+                position = "float_right")
+
+```
+
+```{r echo = FALSE, message= FALSE, warning = FALSE}
+
+histx <- 
+ggplot(data = foo, aes(duration)) + 
+  geom_histogram(bins = 10, fill = "#1f4fa3")+
+  ggtitle("Histogram of Trip Duration")
+
+scatter <- 
+ggplot() +
+  geom_point(data =foo, aes(x = duration, y = miles), color = "#f14728")+
+  ggtitle("Scatterplot of Duration vs. Miles")
+
+grid.arrange(histx, scatter,  ncol = 2)
+
+```
+
+# Part 3: More Trips {-}
+
+```{r echo=FALSE, out.width = '25%',eval = FALSE}
+knitr::include_graphics("mta_logo.png")
+
+```
+
+At this point we've found directions from 150 points to a seperate set of 150 points that were derived from within each city's shapefile. 
+This, honestly, seemed a bit weak to me. It answers the question...kind of. The hypothetical situation seemed to call for, well, *more points*. 
+
+So the idea is this:
+ 
+   1. Forget about origins and destinations and combine the 300 points into one list  
+   2. Find directions from each point to the other 299 points
+
+   
+```{r warning = FALSE}
+#Changing the column names to allow binding
+col_names <- c("latitude", "longitude" )
+
+#Getting the columns wanted from origin and destination, then changing the column names
+coordinates <- list(origin, destination)%>%
+  lapply( function(x) {
+  subset(x, select= -trip_id)
+  }) %>%
+  lapply(setNames, nm = col_names)
+
+#combining the origin and destination coordinate points
+loc_both <- rbind(coordinates[[1]],coordinates[[2]])
+
+#splitting each individual set of coordinates into their own dataframe
+a <- loc_both %>%
+  apply(1, as.data.frame)
+
+#Creating a function that takes each dataframe of a list(here a), replicates the rows the number of times needed, then creates another 2 columns where the other 300 points go (including a duplicate)
+multi.lapply <- function(a){
+  len <- nrow(loc_both)
+  a <- lapply(a, function(x) apply(x, 1, t))
+  c <- lapply(a, as.data.frame)
+  d <- lapply(c, t)
+  e <- lapply(d, function(x)  apply(x, 2, rep, len))
+  f <- lapply(e, function(x) cbind(x, 2, loc_both))
+  new_col_name <-  c("startLat", "startLon", "trip", "endLat", "endLon")
+  g <- lapply(f, setNames, nm = new_col_name)
+  h <- bind_rows(g)
+  return(h)
+}
+
+#Running the created function
+philly_300_points <- multi.lapply(a)
+philly_300_pointsraw <-philly_300_points[c(3,1,2,4,5)]
+
+#removing the duplicate rows
+philly_300_points <- philly_300_pointsraw %>%
+  filter(startLat != endLat, startLon != endLon)
+
+head(philly_300_points)
+```
+
+So now we have a dataframe of `89700` rows. Which is a subset of the `300*300 = 90,000` observations we expected. This is because each trip has one duplicate row (where the starting longitude = the ending longitude and the starting latitude = the ending latitude). 
+
+##Getting the Routes using Google API {-}
+As before, we'll be using the googleway package to access the google maps API [^6]. However, I had no interest in letting this function run for the next however much time. 
+
+A friend of mine recommended looking into parallel computing over the cloud. It was the perfect recommendation. I setup an AWS account and got an Rstudio environment running, which was a bit of a headache. On July 18, I had finally gotten it up and running. That night I went to sleep and left my computer on as my data was processed.
+
+```{r eval = FALSE}
+
+pls <-  mclapply(1:nrow(tfoo), function(x){
+  
+  google_distance(origin = (tfoo[x, 1:2]),
+                  destination = (tfoo[x, 4:5]),
+                  key = ky,
+                  mode = "transit")
+  
+})
+```
+
+#Part 4: A Catastrophic Issue {-}
+
+```{r echo=FALSE, out.width = '25%', eval = FALSE}
+knitr::include_graphics("wmata_logo.png")
+
+```
+
+
+Okay, I woke up the morning of the July 19th and found the two biggest roadblocks of the project waiting at my computer. What made it castrophic was that, along with these two issues, I had my first set of 90,000 routes.
+
+The first issue was that that day, Google had begun charging for their previously free API. A disastear for my student pockets, and so close to the solution. Well, I was too close to not try and find a replacement.
+
+The second issue was that my use of AWS had cost around $50, not something I was expected. Ooops.
+
+Well let's try and solve the first issue first.
+
+##Finding a Replacement for Google Routes API {-}
+Finding another API was only a mild headache. The most annoying aspect was finding one that suppored transit routes and not exclusively driving directions. To the rescue: Here API. It had everything I wanted, except that no kind soul had made an R package to easily access it. It became pretty obvious during that day of research that Here was my best option. I would have to write some of my own functions to get it to work.
+
+###Functions {-}
+Basically, I want to take my 3 lists of 90,000 rows and 360,000 indivudal cooridnates and feed them into the Here API.  
+
+The API requires that the link I use look like:
+
+> "route.cit.api.here .com/routing/7.2/calculateroute.json?waypoint0=52.5208%2C13.4093&waypoint1=52.5034%2C13.3295&mode=fastest%3BpublicTransport &combineChange=true&app_id=DemoAppId01082013GAL&app_code=AJKnXv84fjrb0KIHawS0Tg"
+
+All coordinates needed to be adjusted to be strings that resemble `52.5208%2C13.4093`.
+
+```{r}
+here_mcoord_fix <- function(df){
+  latitude <- df[,1]
+  longitude <- df[,2]
+  url2 <- paste0(longitude, "%2C", latitude)
+  return(url2)
+}
+```
+
+Now, there are several constants in the URL that can be set to variables. Then everything can be easily pasted together into proper URLS.
+
+```{r}
+base_url <- "https://route.cit.api.here.com/routing/7.2/calculateroute.json"
+xmode <- "&mode=fastest%3BpublicTransport&combineChange=true"
+#these two are different per API User
+id <- "&app_id=SOME_NUMBERS_AND_LETTERS&"
+code <- "app_code=SOME_NUMBERS_AND_LETTERS&departure=2018-07-18T11:00:00-05:00"
+```
+
+And here's the function that pulls everything together. It contains the `here_mcoord_fix` function within to cut steps down.
+
+```{r}
+get_here_urls <- function(origin, destination){
+  xorigin <- here_mcoord_fix(origin)
+  xdestination <- here_mcoord_fix(destination)
+  z <- paste0(base_url,"?waypoint0=",xorigin, "&waypoint1=",
+              xdestination, xmode, id, code, sep="")
+  return(z) 
+}
+
+```
+
+So let me show the output:
+```{r}
+origin <- philly_300_points%>%
+  select(startLon, startLat)
+destination <- philly_300_points%>%
+  select(endLon, endLat)
+
+urls <- get_here_urls(origin, destination)
+
+#Let's take a peak at a random 1 of 89700 URLs we've created.
+urls[runif(1, 1,89700)]
+
+```
+
+
+
+
+##Running this Code without Emptying my Pockets {-}
+So, I decided not to use AWS anymore...maybe if I had deep pockets I would, but I had decided to find an alternative. The first thing I learned was that I did not[^1] really fully understand parallel computing. There were better functions than `mclapply` available. The second thing I realized that I was obsessed with doing the work on the cloud. On one hand, the cloud is definietly better. On the other hand, only if you've got that cash-money.
+
+The solution was to use the `DoParallel` package with computers that have multiple cores, thus performing parallel computations on each core.
+
+###Getting DoParallel Up and Running {-}
+```{r, eval = FALSE}
+#Setting up parallel with one less core than available on the computer. This is to avoid intense crashing.
+no_cores <- detectCores() - 1  
+cl <- makeCluster(no_cores)  
+registerDoParallel(cl)  
+
+#To see if that worked: if it returns 1 - then it didn't work
+getDoParWorkers()
+
+#To end the parallel cores
+registerDoSEQ()
+getDoParWorkers()
+
+```
+
+
+###Getting the functions ready to access the here API {-}
+The first step is getting it running before going parallel and seeing what the outputs look like.
+
+There are some messy looking results so I've tabbed this section to maintain readability. Feel free to look through it if you're interested. Each tab is a view of each output.
+
+#### Everything {-}
+The first step is getting it running before going parallel and seeing what the outputs look like:
+
+```{r eval = FALSE}
+
+#We'll use one random url to test
+url_test <- urls[runif(1, 1,89700)]
+require(httr)
+require(jsonlite)
+
+GET_url_test <- GET(url_test)
+content_url_test <-  content(GET_url_test, "text")
+json_url_test <-   fromJSON(content_url_test, flatten = TRUE)
+final_url_test <- as.data.frame(json_url_test)
+
+```
+
+
+#### Step 1 {-}
+```{r}
+GET_url_test
+```
+There are a few good pieces of news in this code:
+
+  *The status is 200 meaning it worked[^7]
+  *The data is in JSON format
+  *The size is not absurd
+
+#### Step 2 {-}
+```{r eval = FALSE}
+content_url_test <-  content(GET_url_test, "text")
+```
+
+```{r echo = FALSE}
+content_url_test
+```
+
+#### Step 3 {-}
+
+```{r eval = FALSE}
+json_url_test <-   fromJSON(content_url_test, flatten = TRUE)
+
+```
+
+```{r echo = FALSE}
+json_url_test
+```
+
+#### step 4 {-}
+```{r eval = FALSE}
+ final_url_test <- as.data.frame(json_url_test)
+```
+
+
+```{r echo = FALSE}
+final_url_test
+
+```
+
+###Preparing Looping Functions for Parallel {-}
+
+
+```{r eval = FALSE}
+#gets the Data from HERE API
+
+get_city = foreach(i=urls, .packages='httr') %dopar% {
+    GET(i)
+  }
+
+status_code(results[[1]]) #Can check some to ensure it worked
+
+#Gets the Json Content
+content_city = foreach(i=get_city, .packages='httr') %dopar% {
+  content(i, "text")
+}
+
+#munging
+#makes the json data semi pretty
+json_city = foreach(i=content_city, .packages='jsonlite') %dopar% {
+  fromJSON(i, flatten = TRUE)
+}
+
+df_city = foreach(i=json_city) %dopar% {
+    as.data.frame(i)
+  }
+
+
+full <- rbindlist(df_city, fill = TRUE)
+
+```
+
+###Plan of Attack {-}
+To solve my 2nd large issue, I decided to leverage the resources of my university. Generally, the idea is to split up the urls into multiple lists, then run each set of URLs independently on several computers.
+
+To split up the URLs:
+```{r}
+list_of_URLs <- split(urls, ceiling(seq_along(urls)/15000))
+str(list_of_URLs)
+
+```
+
+Then on each computer I would run the code, but first specify:
+```{r}
+urls<- list_of_URLs[[2]] #insert whatever subset you want to use
+str(urls)
+
+```
+
+This worked magically. I used several computers over 3 days and got all the data I need. The internet and books constantly preached that 80% of these tasks are data collection / wrangling and only 20% was the actual analysis. I think I finally understand what they mean...But now for the fun! The conclusions and results!!!
+
+
+# Part 5: Results and Conclusion {-}
+
+## Summary of Results {-}
+
+
+```{r echo = FALSE, warning=FALSE}
+fooph <- play_PH %>%
+  group_by(startLat)%>%
+  filter(n()<2)%>%
+  summarise_all(mean) %>%
+  arrange(minutes)
+
+fooDC <- play_DC %>%
+  group_by(startLat)%>%
+  filter(n()<3 )%>%
+  summarise_all(mean) %>%
+  arrange(minutes)
+
+foony <- play_NY %>%
+  group_by(startLat)%>%
+  filter(n()<20 )%>%
+  summarise_all(mean) %>%
+  arrange(minutes)
+
+acity_row <- data.frame(
+DC = c(nrow(play_DC), 90000-nrow(play_DC), nrow(fooDC), 100*((nrow(play_DC)+nrow(fooDC))/90000)),
+Philly = c(nrow(play_PH),90000 -nrow(play_PH),nrow(fooph), 100*((nrow(play_DC) + nrow(fooph))/90000)),
+NYC = c(nrow(play_NY),90000 -nrow(play_NY),nrow(foony),  100*((nrow(play_DC) + nrow(foony))/90000))
+)
+
+rownames(acity_row) <- c("Rows Remaining", "Rows NULL","Got through","Total Percent Removed")
+
+x <- as.matrix(acity_row)
+
+```
+
+
+```{r echo=FALSE, warning=FALSE}
+kable(x, "html") %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "float_right")
+```
+
+Before diving into this crazy results chart, I need to admit something...I don't know what I'm talking about when it comes to [GIS](https://en.wikipedia.org/wiki/Geographic_information_system). If I were a real maps whiz, I would have limited my city polygons to only include areas people lived. There were issues with several areas within each city. 
+
+  1. Many of these issue areas resulted in, mostly, `NULL` responses from the API I used to get direction routes [^8]. These were easily removed. 
+  2. The majority of the rest were a little more *slippery* and got results from the API. An example of one of these were a point in the river would pull `298 NULLS` but would get directions to another random point within the river. These were also easily removed (except for a small few that will be discussed below).
+  3. The last bit are a bit more of a question. A question of how evil these made-up gameshow creators are. For example, several points fell into points deep within large philadelphian parks and began with 20-45 minutes of walking. These were kept in[^9].
+
+
+
+```{r summary_stats, echo = FALSE, warning = FALSE}
+ny_mins_summ <- summary(play_NY$minutes)
+ny_mils_summ <- summary(play_NY$miles)
+
+ny_summary_stats <- t(data.frame(ny_mils_summ = as.vector(ny_mils_summ),
+                      ny_mins_summ = as.vector(ny_mins_summ)))
+
+colnames(ny_summary_stats) <- c("Min", "1st Qu", "Median", "Mean",
+                             "3rd Qu", "Max")
+
+ph_mins_summ <- summary(play_PH$minutes)
+ph_mils_summ <- summary(play_PH$miles)
+
+ph_summary_stats <- t(data.frame(ph_mils_summ = as.vector(ph_mils_summ),
+                      ph_mins_summ = as.vector(ph_mins_summ)))
+
+colnames(ph_summary_stats) <- c("Min", "1st Qu", "Median", "Mean",
+                             "3rd Qu", "Max")
+
+dc_mins_summ <- summary(play_DC$minutes)
+dc_mils_summ <- summary(play_DC$miles)
+
+dc_summary_stats <- t(data.frame(dc_mils_summ = as.vector(dc_mils_summ),
+                      dc_mins_summ = as.vector(dc_mins_summ)))
+
+colnames(dc_summary_stats) <- c("Min", "1st Qu", "Median",
+                                "Mean","3rd Qu", "Max")
+
+acity_summs <- t(rbind(dc_summary_stats, ny_summary_stats, ph_summary_stats))
+acity_summs1 <- as.data.frame(acity_summs)
+acity_summs1 <-  acity_summs1[c(2, 6,4,1,5,3)]
+ 
+colnames(acity_summs1) <- c("DC minutes","Philly minutes","NYC minutes", "DC miles", "Philly miles", "NYC miles")
+
+##sds for all
+x <- data.frame(
+  q <- sd(play_DC$minutes),
+  w <- sd(play_PH$minutes),
+  e <- sd(play_NY$minutes),
+  a <- sd(play_DC$miles),
+  s <- sd(play_PH$miles),
+  d <- sd(play_NY$miles))
+
+colnames(x) <- c("DC minutes","Philly minutes","NYC minutes", "DC miles", "Philly miles", "NYC miles")
+
+acity_summs1 <- rbind(acity_summs1, x)
+rownames(acity_summs1) <-  c("Min", "1st Qu", "Median", "Mean",
+                             "3rd Qu", "Max", "St. Dev.")
+
+acity_summs1 %>%
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE, position = "float_right")
+```
+
+So let's start off by congratulating our nation's capital with running away with the competition. Everything about their summary statistics tells the game show contestents to hope to see `Washington DC` next to their assigned coordinates.
+
+New York City and Philadelphia are actually in pretty close in everything related to time. Unfortunatly the average milage trip in NYC was 9 miles (and 12 in the 3rd quartile) longer than in Philly! So, if you're a real resident of NYC, you're getting some value for your time.
+
+The only two concerning items are the Maxs and Standard Deviations' of New York and Philadelphia. 
+
+## Visual Exploration {-}
+
+```{r scatterplots, echo = FALSE, fig.width=10}
+DCscatter <- ggplot() +
+  geom_point(data = play_DC, aes(x = miles, y = minutes),
+                                     color = "#ff7400") +
+  ggtitle("DC")+
+  theme(legend.position="none")
+
+PHscatter <- ggplot() +
+  geom_point(data = play_PH, aes(x = miles, y = minutes),
+                                     color = "#F14628") +
+  ggtitle("Philly")+
+  theme(legend.position="none")
+
+NYscatter <- ggplot() +
+  geom_point(data = play_NY, aes(x = miles, y = minutes),
+                                     color = "#2360a5") +
+  ggtitle("NYC")+
+  theme(legend.position="none")
+
+```
+
+```{r histograms, echo = FALSE, message= FALSE, fig.width=10}
+DChisto <- ggplot() +
+  geom_histogram(data = play_DC, aes(x = minutes),fill = "#ff7400") +
+  ggtitle("DC")+
+  theme(legend.position="none")
+
+PHhisto <- ggplot() +
+  geom_histogram(data = play_PH, aes(x = minutes),fill = "#F14628") +
+  ggtitle("Philly")+
+  theme(legend.position="none")
+
+NYhisto <- ggplot() +
+  geom_histogram(data = play_NY, aes(x = minutes),fill = "#2360a5") +
+  ggtitle("NYC")+
+  theme(legend.position="none")
+
+```
+
+```{r , echo = FALSE, message= FALSE, fig.width=10, fig.height = 10}
+grid.arrange(DChisto, PHhisto, NYhisto,DCscatter, PHscatter, NYscatter, ncol = 3)
+
+```
+
+
+```{r echo=FALSE, warning=FALSE}
+df <- data.frame(
+  DC = c(68.34, 61.05,7.29 ),
+  Philly = c(142.7, 134.1, 8.6),
+  NYC = c(468.5, 302.6, 165.8)
+)
+
+rownames(df) <- c("Total Area", "Land Area", "Water Area")
+
+kable(df, "html") %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "float_right")
+```
+
+
+
+As suspected, we can see some Right Tail Extremes in the histograms of minutes for both NYC and Philadelphia. On the other hand, DC what a beauty. What causes this? My hypothesis is that it has to do with the size differences between the cities. You can see this in the table of Areas. This also, I think, helps explain the appearance of more`NULL` values in the Philadelphia and New York routes because of the much larger amount of water area within city limits.
+
+Talk about skew here more. Maybe even a table.
+
+## Evil Points {-}
+
+In order to look at these outliers within the NYC and Philly dataset, I would like to put forward an axiom:
+
+> Any trip over three hours, in this situation, can be defined as "Shit Luck", and any trip over five hours is straight up Evil.
+
+Below I've split the histograms up to show these three different types of trips. normal trips (less than 3 hours) are in light blue, bad trips are in dark blue (3 - 5 hours), and truly evil points in black (5+ hours).
+
+```{r scatter_badpoints_id, echo=FALSE, fig.width=10}
+
+foo <- play_PH %>%
+  mutate(comfort = ifelse(minutes >= 300, "evil",
+              ifelse(minutes < 300 & minutes >= 181, "bad","normal"
+                     )))
+
+foo1 <- play_NY %>%
+  mutate(comfort = ifelse(minutes >= 300, "evil",
+              ifelse(minutes < 300 & minutes >= 181, "bad","normal"
+                     )))
+
+NYscatter2 <- ggplot() +
+  geom_point(data = foo1, aes(x = miles, y = minutes, color = comfort))+
+  scale_color_manual(values=c( "#0f16a8","black","#32a1fc"))+
+  ggtitle("NYC")+
+  theme(legend.position="none")
+
+PHscatter2 <- ggplot() +
+  geom_point(data = foo, aes(x = miles, y = minutes, color = comfort))+
+  scale_color_manual(values=c( "#0f16a8","black","#32a1fc"))+
+  ggtitle("PH")+
+  theme(legend.position="none")
+
+DCscatter2 <- ggplot() +
+  geom_point(data = play_DC, aes(x = miles, y = minutes),
+                                     color = "#32a1fc") +
+  ggtitle("DC")+
+  theme(legend.position="none")
+
+grid.arrange(DCscatter2, PHscatter2, NYscatter2, ncol = 3)
+
+```
+<br>
+<br>
+
+```{r shit_trips,echo = FALSE,  warning = FALSE}
+badluck_ny <- play_NY %>%
+  filter(minutes >=180) 
+
+badluck_ph <- play_PH %>%
+  filter(minutes >= 180)
+
+badluck_dc <- play_DC %>%
+  filter(minutes >= 180)
+#Two hours
+badluck_ny1 <- play_NY %>%
+  filter(minutes >=120) 
+
+badluck_ph1 <- play_PH %>%
+  filter(minutes >= 120)
+
+badluck_dc1 <- play_DC %>%
+  filter(minutes >= 120)
+
+#percent of trips that are absurd
+df <- data.frame(DC =
+round((nrow(badluck_dc)/nrow(play_DC))*100, digits = 2),
+PH = 
+round((nrow(badluck_ph)/nrow(play_PH))*100, digits = 2),
+NY = 
+round((nrow(badluck_ny)/nrow(play_NY))*100, digits = 2))
+
+df1 <- data.frame(DC =
+round((nrow(badluck_dc1)/nrow(play_DC))*100, digits = 2),
+PH = 
+round((nrow(badluck_ph1)/nrow(play_PH))*100, digits = 2),
+NY = 
+round((nrow(badluck_ny1)/nrow(play_NY))*100, digits = 2))
+
+df <- rbind(df1, df)
+rownames(df) <- c( "2 hour trip", "3 hour trip")
+
+```
+
+###Percent of Bad Trips {-}
+```{r shit_trips_table, echo=FALSE, warning=FALSE}
+kable(df, "html") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE, position = "float_right")
+
+```
+
+What we see here is that most of the bad points are not truly evil (only 8% and 6% respectively). So, what are those points? I've decided to restrict these points to being above 400 minutes (you'll see why in a second).
+
+### NYC Evil Trips
+
+```{r, echo = FALSE}
+
+evil <- play_NY %>%
+  filter(minutes >400)
+
+#GGPLOT
+foopath <- evil %>%
+  select(latitude = endLat, longitude = endLon, trip_id) %>%
+  mutate(type = rep("destination"))
+
+foopath1 <-evil %>%
+  select(latitude = startLat, longitude = startLon, trip_id) %>%
+  mutate(type = rep("origin"))
+
+foopath <- rbind(foopath, foopath1)
+foopath$type <- as.factor(foopath$type) 
+foopath$trip_id <- as.factor(foopath$trip_id)
+
+along <- gg_ny +
+  geom_point(data = foopath, aes(x = longitude, y = latitude), color = "#fdf5e6",  size = 1.5)+
+  geom_path(data=foopath, aes(x=longitude, y=latitude, group=trip_id), color = "#fdf5e6", size=0.4)+
+  theme(legend.position="none")
+
+###LEAFLET
+leaf_ny <- 
+leaflet(ny) %>%
+  addPolygons(fillColor = "#8a07ef", weight = 1, smoothFactor = 0.2,
+              opacity = 0.5 ,color = "white")%>%
+  addProviderTiles("Esri.WorldStreetMap") %>%
+  addCircleMarkers(lng = evil$startLon, lat = evil$startLat,
+                  radius = 2, color = "red")
+```
+
+```{r echo = FALSE}
+along
+leaf_ny
+```
+<br>
+
+So we can see that all `298` trips that are above are from a singular location. Furthermore, the mean of those trips is a staggering `r round(mean(evil$minutes), digits = 2)`.
+
+### Philadelphia Evil Trips
+
+```{r echo = FALSE}
+evil <- play_PH %>%
+  filter(minutes >400)
+
+#GGPLOT
+foopath <- evil %>%
+  select(latitude = endLat, longitude = endLon, trip_id) %>%
+  mutate(type = rep("destination"))
+foopath1 <-evil %>%
+  select(latitude = startLat, longitude = startLon, trip_id) %>%
+  mutate(type = rep("origin"))
+foopath <- rbind(foopath, foopath1)
+foopath$type <- as.factor(foopath$type) 
+foopath$trip_id <- as.factor(foopath$trip_id)
+
+along <- gg_ph +
+  geom_point(data = foopath, aes(x = longitude, y = latitude, color = type), size = 1.5)+
+  geom_path(data=foopath, aes(x=longitude, y=latitude, group=trip_id), color = "#fdf5e6", size=0.4)+
+  theme(legend.position="none")
+
+# can see 2-3 bad bad points
+
+evil_ph_5 <- data.frame(
+  latitude = c(39.88880, 39.90100, 40.05352,39.88880 ,39.89117),
+  longitude =c(-75.20997, -75.21456, -75.23903, -75.20997, -75.14090)
+)
+
+leaflet_ph <- 
+leaflet(philly) %>%
+  addPolygons(fillColor = "#8a07ef", weight = 1, smoothFactor = 0.2,
+              opacity = 0.5 ,color = "white")%>%
+  addTiles() %>%
+  addCircleMarkers(lng = evil_ph_5$longitude, lat = evil_ph_5$latitude,
+                   radius = 2, color = "blue")
+
+
+```
+
+```{r echo = FALSE}
+along
+leaflet_ph
+```
+
+```{r shit_trips_table_philly, echo=FALSE, warning=FALSE}
+tab_evil <- aggregate(evil[,1], list(evil$startLat), length)%>%
+  arrange(desc(x))
+
+tab_evil1 <- aggregate(evil[,1], list(evil$endLat), length)%>%
+  arrange(desc(x))
+
+tab_evil <- cbind(tab_evil[1:50,], tab_evil1[1:50,])
+colnames(tab_evil) <- c("Bad Origin", "count", "Bad Destination", "count")
+tab_evil <- tab_evil[1:5,]
+
+
+kable(tab_evil, "html") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE, position = "float_right")
+
+```
+<br>
+<br>
+So, unlike NYC, Philadelphia has several locations that are either hard to get to or from. This is apparent from the table to the right.
+
+
+<br>
+## Results of Trips < 3 Hours {-}
+
+Let's say, for no reason at all, that the gameshow guarantees that no trip will be more than 3 hours. How do the results change?
+
+
+```{r reduced_scatter, echo = FALSE, fig.width=10}
+goodluck_ny <- play_NY %>%
+  filter(minutes <=250) 
+
+goodluck_ph <- play_PH %>%
+  filter(minutes <= 250)
+
+PHscatter1 <- ggplot() +
+  geom_point(data = goodluck_ph, aes(x = miles, y = minutes),
+                                     color = "#F14628") +
+  ggtitle("Philly")+
+  theme(legend.position="none")
+
+NYscatter1 <- ggplot() +
+  geom_point(data = goodluck_ny, aes(x = miles, y = minutes),
+                                     color = "#2360a5") +
+  ggtitle("NYC")+
+  theme(legend.position="none")
+
+PHhisto2 <- ggplot() +
+  geom_histogram(data = goodluck_ph, aes(x = minutes),fill = "#F14628") +
+  ggtitle("Philly")+
+  theme(legend.position="none")
+
+NYhisto2 <- ggplot() +
+  geom_histogram(data = goodluck_ny, aes(x = minutes),fill = "#2360a5") +
+  ggtitle("NYC")+
+  theme(legend.position="none")
+
+```
+
+
+```{r , echo = FALSE, message= FALSE, fig.width=10, fig.height = 10}
+grid.arrange(DChisto, PHhisto2, NYhisto2,DCscatter, PHscatter1, NYscatter1, ncol = 3)
+
+```
+
+
+```{r echo = FALSE}
+acity_dat <- play_DC
+
+foo <- acity_dat %>%
+  arrange(minutes)
+#getting 10% of rows
+x <- nrow(foo)*.1
+
+foo <- foo[1:x,]%>%
+  sample_n(50) 
+
+foopath <- foo %>%
+  select(latitude = endLat, longitude = endLon, trip_id) %>%
+  mutate(type = rep("destination"))
+foopath1 <- foo %>%
+  select(latitude = startLat, longitude = startLon, trip_id) %>%
+  mutate(type = rep("origin"))
+foopath <- rbind(foopath, foopath1)
+foopath$type <- as.factor(foopath$type) 
+foopath$trip_id <- as.factor(foopath$trip_id)
+
+along_short_dc <- gg_dc +
+  geom_point(data = foopath, aes(x = longitude, y = latitude),color = "#fdf5e6", size = 1.5)+
+  geom_path(data=foopath, aes(x=longitude, y=latitude, group=trip_id), color = "#fdf5e6", size=0.4)+
+  theme(legend.position="none")
+
+#######
+#getting top 10% sample
+foo <- acity_dat %>%
+  arrange(desc(minutes))
+
+#getting 10% of rows
+x <- nrow(foo)*.1
+
+foo <- foo[1:x,]%>%
+  sample_n(50) 
+
+foopath <- foo %>%
+  select(latitude = endLat, longitude = endLon, trip_id) %>%
+  mutate(type = rep("destination"))
+foopath1 <- foo %>%
+  select(latitude = startLat, longitude = startLon, trip_id) %>%
+  mutate(type = rep("origin"))
+foopath <- rbind(foopath, foopath1)
+foopath$type <- as.factor(foopath$type) 
+foopath$trip_id <- as.factor(foopath$trip_id)
+
+along_long_dc <- gg_dc +
+  geom_point(data = foopath, aes(x = longitude, y = latitude),color = "#fdf5e6", size = 1.5)+
+  geom_path(data=foopath, aes(x=longitude, y=latitude, group=trip_id), color = "#fdf5e6", size=0.4)+
+  theme(legend.position="none")
+
+
+#some of the middle
+
+foo <- acity_dat %>%
+  arrange(desc(minutes))
+#getting 10% of rows
+x <- (nrow(foo)*.1)*.5
+
+x <- (0.5*nrow(acity_dat))-x
+y <- (0.5*nrow(acity_dat))+x
+
+foo <- foo[x:y,]%>%
+  sample_n(50) 
+
+foopath <- foo %>%
+  select(latitude = endLat, longitude = endLon, trip_id) %>%
+  mutate(type = rep("destination"))
+foopath1 <- foo %>%
+  select(latitude = startLat, longitude = startLon, trip_id) %>%
+  mutate(type = rep("origin"))
+foopath <- rbind(foopath, foopath1)
+foopath$type <- as.factor(foopath$type) 
+foopath$trip_id <- as.factor(foopath$trip_id)
+
+along_med_dc <- gg_dc +
+  geom_point(data = foopath, aes(x = longitude, y = latitude),color = "#fdf5e6", size = 1.5)+
+  geom_path(data=foopath, aes(x=longitude, y=latitude, group=trip_id), color = "#fdf5e6", size=0.4)+
+  theme(legend.position="none")
+
+```
+
+
+```{r echo = FALSE}
+
+acity_dat <- play_PH
+
+foo <- acity_dat %>%
+  arrange(minutes)
+#getting 10% of rows
+x <- nrow(foo)*.1
+
+foo <- foo[1:x,]%>%
+  sample_n(50) 
+
+foopath <- foo %>%
+  select(latitude = endLat, longitude = endLon, trip_id) %>%
+  mutate(type = rep("destination"))
+foopath1 <- foo %>%
+  select(latitude = startLat, longitude = startLon, trip_id) %>%
+  mutate(type = rep("origin"))
+foopath <- rbind(foopath, foopath1)
+foopath$type <- as.factor(foopath$type) 
+foopath$trip_id <- as.factor(foopath$trip_id)
+
+along_short_ph <- gg_ph +
+  geom_point(data = foopath, aes(x = longitude, y = latitude),color = "#fdf5e6", size = 1.5)+
+  geom_path(data=foopath, aes(x=longitude, y=latitude, group=trip_id), color = "#fdf5e6", size=0.4)+
+  theme(legend.position="none")
+
+#######
+#getting top 10% sample
+foo <- acity_dat %>%
+  arrange(desc(minutes))
+
+#getting 10% of rows
+x <- nrow(foo)*.1
+
+foo <- foo[1:x,]%>%
+  sample_n(50) 
+
+foopath <- foo %>%
+  select(latitude = endLat, longitude = endLon, trip_id) %>%
+  mutate(type = rep("destination"))
+foopath1 <- foo %>%
+  select(latitude = startLat, longitude = startLon, trip_id) %>%
+  mutate(type = rep("origin"))
+foopath <- rbind(foopath, foopath1)
+foopath$type <- as.factor(foopath$type) 
+foopath$trip_id <- as.factor(foopath$trip_id)
+
+along_long_ph <- gg_ph +
+  geom_point(data = foopath, aes(x = longitude, y = latitude),color = "#fdf5e6", size = 1.5)+
+  geom_path(data=foopath, aes(x=longitude, y=latitude, group=trip_id), color = "#fdf5e6", size=0.4)+
+  theme(legend.position="none")
+
+
+#some of the middle
+
+foo <- acity_dat %>%
+  arrange(desc(minutes))
+#getting 10% of rows
+x <- (nrow(foo)*.1)*.5
+
+x <- (0.5*nrow(acity_dat))-x
+y <- (0.5*nrow(acity_dat))+x
+
+foo <- foo[x:y,]%>%
+  sample_n(50) 
+
+foopath <- foo %>%
+  select(latitude = endLat, longitude = endLon, trip_id) %>%
+  mutate(type = rep("destination"))
+foopath1 <- foo %>%
+  select(latitude = startLat, longitude = startLon, trip_id) %>%
+  mutate(type = rep("origin"))
+foopath <- rbind(foopath, foopath1)
+foopath$type <- as.factor(foopath$type) 
+foopath$trip_id <- as.factor(foopath$trip_id)
+
+along_med_ph <- gg_ph +
+  geom_point(data = foopath, aes(x = longitude, y = latitude),color = "#fdf5e6", size = 1.5)+
+  geom_path(data=foopath, aes(x=longitude, y=latitude, group=trip_id), color = "#fdf5e6", size=0.4)+
+  theme(legend.position="none")
+
+```
+
+
+
+```{r echo = FALSE}
+
+
+acity_dat <- play_NY
+
+foo <- acity_dat %>%
+  arrange(minutes)
+#getting 10% of rows
+x <- nrow(foo)*.1
+
+foo <- foo[1:x,]%>%
+  sample_n(50) 
+
+foopath <- foo %>%
+  select(latitude = endLat, longitude = endLon, trip_id) %>%
+  mutate(type = rep("destination"))
+foopath1 <- foo %>%
+  select(latitude = startLat, longitude = startLon, trip_id) %>%
+  mutate(type = rep("origin"))
+foopath <- rbind(foopath, foopath1)
+foopath$type <- as.factor(foopath$type) 
+foopath$trip_id <- as.factor(foopath$trip_id)
+
+along_short_ny <- gg_ny +
+  geom_point(data = foopath, aes(x = longitude, y = latitude),color = "#fdf5e6", size = 1.5)+
+  geom_path(data=foopath, aes(x=longitude, y=latitude, group=trip_id), color = "#fdf5e6", size=0.4)+
+  theme(legend.position="none")
+
+#######
+#getting top 10% sample
+foo <- acity_dat %>%
+  arrange(desc(minutes))
+
+#getting 10% of rows
+x <- nrow(foo)*.1
+
+foo <- foo[1:x,]%>%
+  sample_n(50) 
+
+foopath <- foo %>%
+  select(latitude = endLat, longitude = endLon, trip_id) %>%
+  mutate(type = rep("destination"))
+foopath1 <- foo %>%
+  select(latitude = startLat, longitude = startLon, trip_id) %>%
+  mutate(type = rep("origin"))
+foopath <- rbind(foopath, foopath1)
+foopath$type <- as.factor(foopath$type) 
+foopath$trip_id <- as.factor(foopath$trip_id)
+
+along_long_ny <- gg_ny +
+  geom_point(data = foopath, aes(x = longitude, y = latitude),color = "#fdf5e6", size = 1.5)+
+  geom_path(data=foopath, aes(x=longitude, y=latitude, group=trip_id), color = "#fdf5e6", size=0.4)+
+  theme(legend.position="none")
+
+
+#some of the middle
+
+foo <- acity_dat %>%
+  arrange(desc(minutes))
+#getting 10% of rows
+x <- (nrow(foo)*.1)*.5
+
+x <- (0.5*nrow(acity_dat))-x
+y <- (0.5*nrow(acity_dat))+x
+
+foo <- foo[x:y,]%>%
+  sample_n(50) 
+
+foopath <- foo %>%
+  select(latitude = endLat, longitude = endLon, trip_id) %>%
+  mutate(type = rep("destination"))
+foopath1 <- foo %>%
+  select(latitude = startLat, longitude = startLon, trip_id) %>%
+  mutate(type = rep("origin"))
+foopath <- rbind(foopath, foopath1)
+foopath$type <- as.factor(foopath$type) 
+foopath$trip_id <- as.factor(foopath$trip_id)
+
+along_med_ny <- gg_ny +
+  geom_point(data = foopath, aes(x = longitude, y = latitude),color = "#fdf5e6", size = 1.5)+
+  geom_path(data=foopath, aes(x=longitude, y=latitude, group=trip_id), color = "#fdf5e6", size=0.4)+
+  theme(legend.position="none")
+
+```
+
+### Sample of Short, Medium, and Long Trips {-}
+I wanted to see what some of the different length trips looked like in each city. Below is series of graphs showing short, medium, and long trips. This was done by taking sample of 50 trips from the bottom, middle, and top 10% of trips for each city.
+
+```{r echo = FALSE, fig.height = 10, fig.width = 12}
+grid.arrange(along_short_dc,along_med_dc, along_long_dc,
+             along_short_ph,along_med_ph, along_long_ph,
+             along_short_ny,along_med_ny, along_long_ny, ncol = 3)
+```
+
+
+##Neighborhoods {-}
+
+As a last question, I was wondering where within each city was the best origin. Below are the top ten origins.
+
+```{r echo = FALSE}
+##Philly
+
+foo <- play_PH %>%
+  group_by(startLat)%>%
+  filter(n()>2)%>%
+  summarise_all(mean) %>%
+  arrange(minutes)
+
+
+#the winner has 1 trip and is delaware rive to delaware river and takes ~20 minutes
+head_neighborhoods_ph <- data.frame(
+        latitude = foo$startLat[1:10],
+        longitude =foo$startLon[1:10])
+
+along <- gg_ph +
+  geom_point(data = head_neighborhoods_ph, aes(x = longitude, y = latitude), color = "#fdf5e6",  size = 1.5)
+
+
+leaf_ph_neigh <- 
+  leaflet(philly) %>%
+  addPolygons(fillColor = "#8a07ef", weight = 1, smoothFactor = 0.2,
+              opacity = 0.5 ,color = "white")%>%
+  addProviderTiles("Esri.WorldStreetMap") %>%
+  addCircleMarkers(lng = head_neighborhoods_ph$longitude, lat = head_neighborhoods_ph$latitude,
+                   radius = 2, color = "red")
+
+leaf_ph_neigh
+
+```
+
+<br>
+
+```{r echo = FALSE}
+###DC
+
+foo <- play_DC %>%
+  group_by(startLat)%>%
+  filter(n()>3 )%>%
+  summarise_all(mean) %>%
+  arrange(minutes)
+
+
+#the winner has 1 trip and is delaware rive to delaware river and takes ~20 minutes
+head_neighborhoods_dc <- data.frame(
+  latitude = foo$startLat[1:10],
+  longitude =foo$startLon[1:10])
+
+along <- gg_dc +
+  geom_point(data = head_neighborhoods_dc, aes(x = longitude, y = latitude), color = "#fdf5e6",  size = 1.5)
+
+
+leaf_dc_neigh <- 
+  leaflet(dc) %>%
+  addPolygons(fillColor = "#8a07ef", weight = 1, smoothFactor = 0.2,
+              opacity = 0.5 ,color = "white")%>%
+  addProviderTiles("Esri.WorldStreetMap") %>%
+  addCircleMarkers(lng = head_neighborhoods_dc$longitude, lat = head_neighborhoods_dc$latitude,
+                   radius = 2, color = "red")
+
+leaf_dc_neigh
+```
+
+<br>
+
+```{r echo = FALSE}
+###NY
+
+foo <- play_NY %>%
+  group_by(startLat)%>%
+  filter(n()>20 )%>%
+  summarise_all(mean) %>%
+  arrange(minutes)
+
+#the winner has 1 trip and is delaware rive to delaware river and takes ~20 minutes
+head_neighborhoods_ny <- data.frame(
+  latitude = foo$startLat[1:10],
+  longitude =foo$startLon[1:10])
+
+along <- gg_ny +
+  geom_point(data = head_neighborhoods_ny, aes(x = longitude, y = latitude), color = "#fdf5e6",  size = 1.5)
+
+
+leaf_ny_neigh <- 
+  leaflet(ny) %>%
+  addPolygons(fillColor = "#8a07ef", weight = 1, smoothFactor = 0.2,
+              opacity = 0.5 ,color = "white")%>%
+  addProviderTiles("Esri.WorldStreetMap") %>%
+  addCircleMarkers(lng = head_neighborhoods_ny$longitude, lat = head_neighborhoods_ny$latitude,
+                   radius = 2, color = "red")
+
+leaf_ny_neigh
+```
+
+
+# Endnotes:
+
+**************
+[^1]: One of only 3 positions in life that take shotgun seat in front of good friend. The other two being parents and grandparents. 
+
+[^2]: This made the trip much more annoying. In Philadelphia they had purchased a new caspar mattress during a 4th of July sale. My friend had done this forgetting he'd offered me a ride...the mattress and I were quite squished in back seat.
+
+[^3]: The reason for this is purely personal. I had spent the best 10 years of my childhood around Philadelphia. The three of us in the car had attended University of Maryland, and so had used DC public transportation regularly over the last 4 years. Lastly, my friends were two weeks from moving to NYC to start their lives together.
+
+[^4]: [Wikipedia ShapefileArticle](https://en.wikipedia.org/wiki/Shapefile)
+
+[^5]: I hope it's clear enough from the code chunk, but I want to make it clear that the numextract function is not my own. I found it on: http://stla.github.io/stlapblog/posts/Numextract.html
+
+[^6]: Spoilder alert: not for long.
+
+[^7]: status codes starting 3xx or 4xx spell out trouble. Also, can use the httr function `status_code()` to get this piece of information easier.
+
+[^8]: This includes some absurd areas like within rivers and oceans.
+[^9]: I used the [HERE API](https://developer.here.com/)
