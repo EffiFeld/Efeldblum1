@@ -10,10 +10,10 @@ hasCJKLanguage = false
 [params]
 	author = "Effi Feldblum"
 	description = "Site Description"
-	bio = "author biography"
+	bio = "Effi Feldblum"
 
-	twitter = "your_twitter_id"
-	facebook = "your_facebook_id"
+	#twitter = "your_twitter_id"
+	#facebook = "your_facebook_id"
 
 	enableRSS = true
 	enableToc = true
@@ -54,7 +54,7 @@ hasCJKLanguage = false
 	copyright = ""
 
 	# show latest posts in single page
-	showLatestPosts = false
+	showLatestPosts = true
 	readMore = ""
 
 	# Share
@@ -74,6 +74,6 @@ hasCJKLanguage = false
 
 # Add additional social link entries underneath
 [social]
-	facebook-square = "https://www.facebook.com/nodejh"
-	twitter-square = "https://www.twitter.com/nodejh"
-	github-square = "https://www.github.com/nodejh"
+
+	github-square = "https://www.github.com/EffiFeld"
+  email-square = "effi.feldblum@gmail.com"
