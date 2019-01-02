@@ -47,7 +47,7 @@ hasCJKLanguage = false
 	home = ""
 	about = ""
 	archive = ""
-	subscribe = ""
+	#subscribe = ""
 
 	olderPosts = ""
 	newerPosts = ""

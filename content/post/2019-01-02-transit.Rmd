@@ -4,6 +4,9 @@ author: Effi Feldblum
 date: '2019-01-02'
 categories: ["R"]
 tags: ["R Markdown", "plot", "regression"]
+output: 
+  html_document:
+    self_contained: no
 ---
 
 
@@ -142,11 +145,11 @@ Runif will return to us a specified set of random numbers (here `3`) from a unif
 
 So, I needed to get approximated bounded corners for the city. The way I decided to do this was to use googlemaps functionality of finding longitude and latitude of any point clicked.
 
-```{r echo=FALSE, out.width = '100%', eval = FALSE}
-knitr::include_graphics("google_maps_whats_here.png")
+```{r echo=FALSE, out.width = '100%'}
+knitr::include_graphics("x1.png")
 
 ```
-```{r echo=FALSE, out.width = '35%', eval = FALSE}
+```{r echo=FALSE, out.width = '35%'}
 knitr::include_graphics("Untitled.png")
 ```
 
@@ -202,7 +205,7 @@ Cities are not specificially oriented in the plot of the Earth's coordinate syst
 # Part 2: Shapefiles and Progress {-}
 
 
-```{r echo=FALSE, out.width = '50%',eval = FALSE}
+```{r echo=FALSE, out.width = '50%'}
 knitr::include_graphics("Septa_logo.png")
 
 ```
@@ -430,7 +433,7 @@ grid.arrange(histx, scatter,  ncol = 2)
 
 # Part 3: More Trips {-}
 
-```{r echo=FALSE, out.width = '25%',eval = FALSE}
+```{r echo=FALSE, out.width = '25%'}
 knitr::include_graphics("mta_logo.png")
 
 ```
@@ -508,7 +511,7 @@ pls <-  mclapply(1:nrow(tfoo), function(x){
 
 #Part 4: A Catastrophic Issue {-}
 
-```{r echo=FALSE, out.width = '25%', eval = FALSE}
+```{r echo=FALSE, out.width = '25%'}
 knitr::include_graphics("wmata_logo.png")
 
 ```
