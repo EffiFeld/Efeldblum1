@@ -1,14 +1,14 @@
 # Site settings
 baseurl = "https://condescending-jennings-588591.netlify.com/"
 languageCode = "en"
-title = "site title"
+title = "Portfolio"
 theme = "hugo-theme-cactus-plus"
 googleAnalytics = "your_google_analytics_id"
 # Set the value to true if your site include CJK (Chinese, Japanese, and Korean languages) characters
 hasCJKLanguage = false
 
 [params]
-	author = "site_author"
+	author = "Effi Feldblum"
 	description = "Site Description"
 	bio = "author biography"
 
