@@ -1,6 +1,9 @@
 ---
 title: A Question on the Efficiency of Transit in Absurd Situations
 author: Effi Feldblum
+slug: transit
+description: A short Article
+summary: AAAA
 date: '2018-08-22'
 categories: ["R"]
 tags: ["R Markdown", "plot", "regression"]

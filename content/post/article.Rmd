@@ -1,6 +1,9 @@
 ---
-title: "Airbnb Predictions Project"
-author: "Effi Feldblum"
+title: Airbnb Predictions Project
+author: Effi Feldblum
+slug: airbnb
+description: A short Article
+summary: AAAA
 date: '2018-12-10'
 categories: ["R"]
 tags: ["R Markdown", "plot", "regression"]
