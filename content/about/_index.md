@@ -4,12 +4,6 @@ title = "About"
 hidden = true
 +++
 
-Lorem ipsum dolor sit amet, consectetur adipisicing elit. Ipsa ullam earum dolorum! Sed, perspiciatis.
+I am a recent college graduate seeking a data analysis/science position working on predictive analytics. Whatever the domain, I am a quick and eager study with a background in business.
 
-Lorem ipsum dolor sit amet, consectetur adipisicing elit.
-
-***
-
-### Lorem ipsum dolor.
-
-Lorem ipsum dolor sit amet, consectetur adipisicing elit. Ea dicta corporis ad inventore itaque impedit dolor atque amet exercitationem! Veniam qui voluptas maiores vel laudantium necessitatibus, velit ducimus! Iste hic facere, accusamus fugiat enim facilis.
+Email: Effi.Feldblum@gmail.com
