@@ -6,7 +6,7 @@ description: A short Article
 summary: AAAA
 date: '2018-08-22'
 categories: ["R"]
-tags: ["R Markdown", "plot", "regression"]
+tags: ["R", "AWS", "Parallel Computing", "GIS", "API use"]
 
 ---
 
