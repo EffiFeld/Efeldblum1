@@ -7,8 +7,6 @@ tags: ["R Markdown", "plot", "regression"]
 
 ---
 
-
-
 # Introduction
 
 This work  was originally done for a university project. The project had two main components: a kaggle-esque competition and a full business report. Due to this dual mandate, there are numerous methods attempted that would be omitted. The competition was judged based off of plain accuracy of a held-out testing dataset. This document is a sort of summary of the finalized pipeline. I hope it is helpful to any of you out there.
