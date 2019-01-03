@@ -1,0 +1,1791 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		 
+			
+  
+    <meta name="twitter:card" content="summary"/>
+    
+      <meta name="twitter:image" content="/images/avatar.png" />
+    
+  
+  
+  <meta name="twitter:title" content="Airbnb Predictions Project"/>
+  <meta name="twitter:description" content="IntroductionThis work was originally done for a university project. The project had two main components: a kaggle-esque competition and a full business report. Due to this dual mandate, there are numerous methods attempted that would be omitted. The competition was judged based off of plain accuracy of a held-out testing dataset. This document is a sort of summary of the finalized pipeline. I hope it is helpful to any of you out there."/>
+  
+  
+  
+  
+    <meta name="twitter:creator" content="@Effi Feldblum"/>
+  
+
+
+
+		
+		<meta name="author" content="Effi Feldblum">
+		<meta name="description" content="Site Description">
+		<meta name="generator" content="Hugo 0.53" />
+		<title>Airbnb Predictions Project &middot; Portfolio</title>
+		<link rel="shortcut icon" href="/images/favicon.ico">
+		<link rel="stylesheet" href="/css/style.css">
+		<link rel="stylesheet" href="/css/highlight.css">
+
+		
+		<link rel="stylesheet" href="/css/font-awesome.min.css">
+		
+
+		
+		<link href="/index.xml" rel="alternate" type="application/rss+xml" title="Portfolio" />
+		
+
+		
+	</head>
+
+    <body>
+       <nav class="main-nav">
+	
+	
+		<a href='/'> <span class="arrow">←</span>Home</a>
+	
+	<a href='/posts'>Archive</a>
+	<a href='/tags'>Tags</a>
+	<a href='/about'>About</a>
+
+	
+
+	
+	<a class="cta" href="/index.xml">Subscribe</a>
+	
+</nav>
+
+
+        <section id="wrapper" class="post">
+            <article>
+                <header>
+                    <h1>
+                        Airbnb Predictions Project
+                    </h1>
+                    <h2 class="headline">
+                    Dec 10, 2018 00:00
+                    · 4627 words
+                    · 22 minute read
+                      <span class="tags">
+                      
+                      
+                          
+                              <a href="/tags/r-markdown">R Markdown</a>
+                          
+                              <a href="/tags/plot">plot</a>
+                          
+                              <a href="/tags/regression">regression</a>
+                          
+                      
+                      
+                      </span>
+                    </h2>
+                </header>
+                
+                  
+                
+                <section id="post-body">
+                    
+<script src="/rmarkdown-libs/kePrint/kePrint.js"></script>
+
+
+<div id="introduction" class="section level1">
+<h1>Introduction</h1>
+<p>This work was originally done for a university project. The project had two main components: a kaggle-esque competition and a full business report. Due to this dual mandate, there are numerous methods attempted that would be omitted. The competition was judged based off of plain accuracy of a held-out testing dataset. This document is a sort of summary of the finalized pipeline. I hope it is helpful to any of you out there.</p>
+<p>This is an analysis of the factors that potentially influence Airbnb booking numbers in an attempt to predict which listings will be highly active. Highly active is defined in the binary high_booking_rate variable with 1 indicating a listing is booked more than 90% of the available time. The proportion of highly booked listings is relatively small at ~25%. There are two main goals of the analysis. First, to build a model reasonably more effective at classifying listings as high booking rate than the baseline. Second, to understand which factors are most important in identifying highly booked listings in order to provide hosts with information.</p>
+<div id="setup" class="section level2 tabset">
+<h2>Setup</h2>
+<div id="libraries" class="section level3">
+<h3>Libraries</h3>
+<pre class="r"><code>library(DataExplorer)
+library(tidyverse)
+library(data.table)
+library(caret)
+library(DMwR)
+library(purrr)
+library(gridExtra)
+library(h2o)
+library(kableExtra)
+#library(glmnet) Can be really annoying with mlr&#39;s auc metric. Not sure why or how to fix besides unloading it before using mlr.</code></pre>
+</div>
+<div id="functions-used" class="section level3">
+<h3>Functions used</h3>
+<pre class="r"><code>missing_plot &lt;- function(df){
+  xx &lt;- colSums(is.na(DF_Test))
+  xx1 &lt;- as.data.frame(xx)
+  rws &lt;- row.names(xx1)
+  xx1 &lt;- xx1 %&gt;%
+    dplyr::mutate(percent = round((xx/nrow(DF_Test))*100),4)%&gt;%
+    mutate(variable = rws)%&gt;%
+    arrange(xx)
+  
+  ggplot(aes(x= variable, y =xx, label = percent), data = xx1)+
+    geom_col()+
+    coord_flip()
+  
+}
+
+find_rate_cleaning &lt;- function(amount){
+  #filter out by the amount requessted
+  xx = filter(DF_Test,cleaning_fee &gt;amount)
+  #basically a table like thing
+  xx=count(xx,high_booking_rate)
+  return(xx[2,2]/(xx[1,2]+xx[2,2]))
+}
+
+
+find_rate_cleaning_opposite &lt;- function(amount){
+  #filter out by the amount requessted
+  xx = filter(DF_Test,cleaning_fee &lt;amount)
+  #basically a table like thing
+  xx=count(xx,high_booking_rate)
+  return(xx[2,2]/(xx[1,2]+xx[2,2]))
+}</code></pre>
+</div>
+</div>
+</div>
+<div id="eda" class="section level1">
+<h1>EDA</h1>
+<p>Let’s read in the data and convert all the character variables to factors.</p>
+<pre class="r"><code>DF_Test &lt;- read.csv(&quot;data/airbnb/Airbnb_Training.csv&quot;, stringsAsFactors = FALSE,na.strings=c(&quot;&quot;,&quot;NA&quot;))
+backup &lt;- DF_Test
+DF_Test$high_booking_rate &lt;- as.factor(DF_Test$high_booking_rate)
+levels(DF_Test$high_booking_rate) &lt;- c(&quot;Low&quot;, &quot;High&quot;)
+
+fact_col &lt;- colnames(DF_Test)[sapply(DF_Test,is.character)]
+for(i in fact_col)
+  set(DF_Test,j=i,value = factor(DF_Test[[i]]))
+
+
+glimpse(DF_Test)</code></pre>
+<pre><code>## Observations: 44,993
+## Variables: 39
+## $ Listing_ID                       &lt;int&gt; 1, 2, 3, 4, 5, 6, 7, 8, 9, 10...
+## $ high_booking_rate                &lt;fct&gt; Low, High, Low, Low, Low, Low...
+## $ accommodates                     &lt;int&gt; 2, 2, 10, 4, 8, 2, 3, 1, 8, 1...
+## $ amenities                        &lt;fct&gt; {Kitchen,&quot;Free Parking on Pre...
+## $ availability_30                  &lt;int&gt; 0, 3, 8, 10, 5, 0, 18, 0, 4, ...
+## $ availability_365                 &lt;int&gt; 130, 136, 318, 339, 205, 0, 7...
+## $ availability_60                  &lt;int&gt; 0, 30, 13, 34, 24, 0, 45, 0, ...
+## $ availability_90                  &lt;int&gt; 0, 46, 43, 64, 54, 0, 71, 0, ...
+## $ bathrooms                        &lt;dbl&gt; 1.0, 1.0, 2.0, 1.0, 2.5, 1.0,...
+## $ bed_type                         &lt;fct&gt; Airbed, Real Bed, Real Bed, R...
+## $ bedrooms                         &lt;int&gt; 1, 1, 3, 1, 3, 2, 1, 1, 2, 1,...
+## $ beds                             &lt;int&gt; 1, 1, 5, 1, 3, 1, 2, 1, 4, 1,...
+## $ cancellation_policy              &lt;fct&gt; moderate, flexible, strict, s...
+## $ cleaning_fee                     &lt;int&gt; 10, NA, 95, 120, 145, NA, 45,...
+## $ description                      &lt;fct&gt; The space for rent is a minim...
+## $ extra_people                     &lt;int&gt; 0, 10, 10, 0, 100, 0, 45, 95,...
+## $ guests_included                  &lt;int&gt; 1, 1, 2, 1, 5, 1, 2, 1, 6, 1,...
+## $ host_has_profile_pic             &lt;fct&gt; t, t, t, t, t, t, t, t, t, t,...
+## $ host_identity_verified           &lt;fct&gt; t, t, t, t, f, t, f, f, t, t,...
+## $ host_is_superhost                &lt;fct&gt; f, f, f, f, f, f, f, f, f, f,...
+## $ host_listings_count              &lt;int&gt; 1, 2, 7, 552, 1, 1, 51, 1, 1,...
+## $ host_response_rate               &lt;dbl&gt; NA, 1.00, 1.00, 0.99, 0.50, 0...
+## $ host_response_time               &lt;fct&gt; NA, within a day, within a fe...
+## $ host_total_listings_count        &lt;int&gt; 1, 2, 7, 552, 1, 1, 51, 1, 1,...
+## $ host_verifications               &lt;fct&gt; [&#39;email&#39;, &#39;phone&#39;, &#39;linkedin&#39;...
+## $ instant_bookable                 &lt;fct&gt; f, f, f, f, f, f, t, f, t, f,...
+## $ latitude                         &lt;dbl&gt; 47.66459, 38.93004, 32.75272,...
+## $ longitude                        &lt;dbl&gt; -122.28164, -77.02028, -117.2...
+## $ market                           &lt;fct&gt; Seattle, D.C., San Diego, Aus...
+## $ maximum_nights                   &lt;int&gt; 1125, 1125, 25, 1125, 1125, 1...
+## $ minimum_nights                   &lt;int&gt; 1, 1, 3, 2, 2, 2, 1, 4, 1, 1,...
+## $ price                            &lt;int&gt; 60, 60, 265, 224, 600, 250, 9...
+## $ property_type                    &lt;fct&gt; Apartment, Apartment, Townhou...
+## $ require_guest_phone_verification &lt;fct&gt; f, f, f, f, f, f, f, f, f, f,...
+## $ require_guest_profile_picture    &lt;fct&gt; f, f, f, f, f, f, f, f, f, f,...
+## $ requires_license                 &lt;fct&gt; f, f, f, f, f, f, t, f, f, f,...
+## $ room_type                        &lt;fct&gt; Private room, Private room, E...
+## $ security_deposit                 &lt;int&gt; NA, NA, 500, NA, 2000, 200, N...
+## $ summary                          &lt;fct&gt; The space for rent is a minim...</code></pre>
+<p>So, there a total of 39 columns and 44993 rows. The dependent variable is high booking rate.</p>
+<p>One of the first things noticed about the high booking rate was the relative class imbalance, with around 75% of the observations in the full dataset having a low booking rate. Booking rate is defined as high (or 1, as a dummy variable) if the listing is booked more than 90% of the available time, and low (or 0) otherwise. As we are attempting to identify and predict Airbnb listings that will have a high booking rate, there was considerable effort to understand the reasons behind this class imbalance, and combat where possible.</p>
+<pre class="r"><code>table(DF_Test$high_booking_rate)</code></pre>
+<pre><code>## 
+##   Low  High 
+## 33716 11277</code></pre>
+<p>Another quick item was that noticed was that while host_total_listing_count supposedly contains listings that a host used to have, it is identical to the host_listing_count, so it was removed.</p>
+<pre class="r"><code># checking for identical variables
+identical(DF_Test$host_total_listings_count,DF_Test$host_listings_count)</code></pre>
+<pre><code>## [1] TRUE</code></pre>
+<div id="first-look" class="section level2">
+<h2>First Look</h2>
+<p>Below is a condensed set of charts. As you can see, there are heavy skews and issues with deficient classes.</p>
+<pre class="r"><code>#From the DataExplorer package
+plot_histogram(DF_Test)</code></pre>
+<p><img src="/post/article_files/figure-html/EDA1-1.png" width="672" /><img src="/post/article_files/figure-html/EDA1-2.png" width="672" /> These histograms show some worrying skew and potential outliers in some of our numerical variables. This was dealt with below with some identification of faulty inputs and full transformations on variables.</p>
+<pre class="r"><code>plot_bar(DF_Test)</code></pre>
+<pre><code>## 4 columns ignored with more than 50 categories.
+## amenities: 42354 categories
+## description: 44453 categories
+## host_verifications: 564 categories
+## summary: 42599 categories</code></pre>
+<p><img src="/post/article_files/figure-html/EDA2-1.png" width="672" /><img src="/post/article_files/figure-html/EDA2-2.png" width="672" /> Some variables that will need attention here are the market, property type, bed type. All have either some abnormalities or class deficiency.</p>
+<p><br> <br></p>
+<p>The main approach was to transform the dataset into two main variations: one more heavily manipulated and variables were reduced (Modified), and the other was kept more to the original (Lean). Then, several transformations, factor level decisions, and models were tested.</p>
+</div>
+<div id="missing-values" class="section level2">
+<h2>Missing Values</h2>
+<pre class="r"><code># quick custom function, can be found below
+missing_plot(DF_Test)</code></pre>
+<p><img src="/post/article_files/figure-html/missing%20values-1.png" width="672" /></p>
+<pre class="r"><code>colSums(is.na(DF_Test))</code></pre>
+<pre><code>##                       Listing_ID                high_booking_rate 
+##                                0                                0 
+##                     accommodates                        amenities 
+##                                0                                0 
+##                  availability_30                 availability_365 
+##                                0                                0 
+##                  availability_60                  availability_90 
+##                                0                                0 
+##                        bathrooms                         bed_type 
+##                              115                                0 
+##                         bedrooms                             beds 
+##                               43                               35 
+##              cancellation_policy                     cleaning_fee 
+##                                0                             8222 
+##                      description                     extra_people 
+##                               10                                0 
+##                  guests_included             host_has_profile_pic 
+##                                0                               54 
+##           host_identity_verified                host_is_superhost 
+##                               54                               54 
+##              host_listings_count               host_response_rate 
+##                               54                             7076 
+##               host_response_time        host_total_listings_count 
+##                             7076                               54 
+##               host_verifications                 instant_bookable 
+##                                0                                0 
+##                         latitude                        longitude 
+##                                0                                0 
+##                           market                   maximum_nights 
+##                              184                                0 
+##                   minimum_nights                            price 
+##                                0                                0 
+##                    property_type require_guest_phone_verification 
+##                                1                                0 
+##    require_guest_profile_picture                 requires_license 
+##                                0                                0 
+##                        room_type                 security_deposit 
+##                                0                            18258 
+##                          summary 
+##                             1293</code></pre>
+<p>Okay so there’s a fair number of missing values, ~ 2.5% of all observations. These missing values were split among several variables. Treatment was experimented with and our final pipeline contained different methods.</p>
+<div id="cleaning-fees" class="section level3">
+<h3>cleaning fees</h3>
+<p>The two variables with the largest proportion of missing variables were cleaning_fee and security_deposit. The main question is whether these NAs are legitimate, there on purpose, or due to a scraping or entry error.</p>
+<pre class="r"><code>summary(DF_Test$cleaning_fee)</code></pre>
+<pre><code>##    Min. 1st Qu.  Median    Mean 3rd Qu.    Max.    NA&#39;s 
+##    0.00   25.00   50.00   66.98   95.00 1000.00    8222</code></pre>
+<pre class="r"><code>nrow(filter(DF_Test, cleaning_fee &lt;25)) # there are 7000ish below 25</code></pre>
+<pre><code>## [1] 6973</code></pre>
+<pre class="r"><code>nrow(filter(DF_Test, cleaning_fee ==0)) # there are 767 at 0 (There are double the number at $10 cleaning fee)</code></pre>
+<pre><code>## [1] 767</code></pre>
+<p>The average cleaning fee is not absurd; however, the indicated skew is quite severe. Using a combination of domain knowledge and this data, it was suspected that these NAs were likely due to that listing lacking those charges. From experience, there are many listings without either a cleaning fee or a security deposit. When looking at cleaning fee, ~60% are beneath $100, yet there are only 1.7% set at zero (there are 5% set exactly at $25). The story is much the same for security_deposit NAs. Because of this, it was decided to impute all NAs as 0. To take a quick peak at the skew.</p>
+<pre class="r"><code>ggplot() +geom_histogram(aes(x=cleaning_fee), data = DF_Test)</code></pre>
+<p><img src="/post/article_files/figure-html/cleaning_fees1-1.png" width="672" /></p>
+<pre class="r"><code>#as seen above the max is 1000$ cleaning...e
+#so there&#39;s def a skew here
+nrow(filter(DF_Test, cleaning_fee &gt;300)) # there are 159 listings above $300</code></pre>
+<pre><code>## [1] 159</code></pre>
+<pre class="r"><code>nrow(filter(DF_Test, cleaning_fee &gt;400)) # only 15 listings above $500</code></pre>
+<pre><code>## [1] 60</code></pre>
+<pre class="r"><code>c &lt;- c(5,10,25,50,100,200,300,400)
+sapply(c, find_rate_cleaning) # a custom function that finds the high booking rate of all observations above that number</code></pre>
+<pre><code>## $n
+## [1] 0.2565069
+## 
+## $n
+## [1] 0.250377
+## 
+## $n
+## [1] 0.2368824
+## 
+## $n
+## [1] 0.2128215
+## 
+## $n
+## [1] 0.1464185
+## 
+## $n
+## [1] 0.06707317
+## 
+## $n
+## [1] 0.04402516
+## 
+## $n
+## [1] NA</code></pre>
+<pre class="r"><code>sapply(c,find_rate_cleaning_opposite)# a custom function that finds the high booking rate of all observations above that number</code></pre>
+<pre><code>## $n
+## [1] 0.3298566
+## 
+## $n
+## [1] 0.3716632
+## 
+## $n
+## [1] 0.3436111
+## 
+## $n
+## [1] 0.3250699
+## 
+## $n
+## [1] 0.2923284
+## 
+## $n
+## [1] 0.2665765
+## 
+## $n
+## [1] 0.261587
+## 
+## $n
+## [1] 0.2604252</code></pre>
+<p>What can be seen here is mirrored in many of the skewed numerical variables. There are several listings in either mansions or famous residences with prices and descriptions that indicate a high booking rate might not be necessary for their business. However, if you’re looking to have a high booking rate, there appears to be an incentive to remain “sane” with your added fees. Perhaps there should be some testing with a cleaning_fee per bedroom or per accomodates.</p>
+</div>
+</div>
+</div>
+<div id="dataset-modification" class="section level1 tabset">
+<h1>Dataset Modification</h1>
+<div id="description" class="section level2">
+<h2>Description</h2>
+<p>The first tab is the setup for trying different levels for market with three different binnings attempted. The next two tabs are used to create the bases for the two datasets referenced above [Lean, Modified].</p>
+</div>
+<div id="market-setup" class="section level2">
+<h2>Market Setup</h2>
+<p>Markets</p>
+<pre class="r"><code>DF_market_18 &lt;- DF_Test
+DF_market_18$market &lt;- as.character(DF_market_18$market)
+
+DF_market_18$market &lt;- ifelse(DF_market_18$market == &quot;Nice&quot;, &quot;Other (International)&quot;,DF_market_18$market)
+DF_market_18$market &lt;- ifelse(DF_market_18$market == &quot;Venice&quot;, &quot;Other (International)&quot;,DF_market_18$market)
+DF_market_18$market &lt;- ifelse(DF_market_18$market == &quot;London&quot;, &quot;Other (International)&quot;,DF_market_18$market)
+DF_market_18$market &lt;- ifelse(DF_market_18$market == &quot;Agra&quot;, &quot;Other (International)&quot;,DF_market_18$market)
+DF_market_18$market &lt;- ifelse(DF_market_18$market == &quot;Lagos, NG&quot;, &quot;Other (International)&quot;,DF_market_18$market)
+
+
+
+DF_market_18$market &lt;- ifelse(DF_market_18$market == &quot;San Antonio, US&quot;, &quot;Other (Domestic)&quot;,DF_market_18$market)
+DF_market_18$market &lt;- ifelse(DF_market_18$market == &quot;Philadelphia&quot;, &quot;Other (Domestic)&quot;,DF_market_18$market)
+DF_market_18$market &lt;- ifelse(DF_market_18$market == &quot;Dallas&quot;, &quot;Other (Domestic)&quot;,DF_market_18$market)
+
+DF_market_18$market &lt;- ifelse(DF_market_18$market == &quot;Dallas&quot;, &quot;Other (Domestic)&quot;,DF_market_18$market)
+DF_market_18$market &lt;- ifelse(DF_market_18$market == &quot;San Antonio, US&quot;, &quot;Other (Domestic)&quot;,DF_market_18$market)
+DF_market_18$market &lt;- ifelse(DF_market_18$market == &quot;Indianapolis&quot;, &quot;Other (Domestic)&quot;,DF_market_18$market)
+DF_market_18$market &lt;- ifelse(DF_market_18$market == &quot;Providence&quot;, &quot;Other (Domestic)&quot;,DF_market_18$market)
+DF_market_18$market &lt;- ifelse(DF_market_18$market == &quot;Fresno&quot;, &quot;Other (Domestic)&quot;,DF_market_18$market)
+DF_market_18$market &lt;- ifelse(DF_market_18$market == &quot;Houston&quot;, &quot;Other (Domestic)&quot;,DF_market_18$market)
+DF_market_18$market &lt;- ifelse(DF_market_18$market == &quot;Fontana&quot;, &quot;Other (Domestic)&quot;,DF_market_18$market)
+DF_market_18$market &lt;- ifelse(DF_market_18$market == &quot;South Florida Gulf Coast&quot;, &quot;Other (Domestic)&quot;,DF_market_18$market)
+DF_market_18$market &lt;- ifelse(DF_market_18$market == &quot;Fontana&quot;, &quot;Other (Domestic)&quot;,DF_market_18$market)
+DF_market_18$market &lt;- ifelse(DF_market_18$market == &quot;Pittsburg&quot;, &quot;Other (Domestic)&quot;,DF_market_18$market)
+
+
+DF_market_18$market &lt;- ifelse(DF_market_18$market == &quot;East Bay, CA&quot;, &quot;San Francisco&quot;,DF_market_18$market)
+DF_market_18$market &lt;- ifelse(DF_market_18$market == &quot;South Bay, CA&quot;, &quot;Los Angeles&quot;,DF_market_18$market)
+DF_market_18$market &lt;- ifelse(DF_market_18$market == &quot;Coastal Orange County&quot;, &quot;Los Angeles&quot;,DF_market_18$market)
+DF_market_18$market &lt;- ifelse(DF_market_18$market == &quot;Carlsbad&quot;, &quot;San Diego&quot;,DF_market_18$market)
+DF_market_18$market &lt;- as.factor(DF_market_18$market)
+
+
+DF_market_4 &lt;- DF_market_18
+DF_market_4$market &lt;- as.character(DF_market_4$market)
+
+DF_market_4$market &lt;- ifelse(DF_market_4$market == &quot;New Orleans&quot;, &quot;Mid City&quot;,DF_market_4$market)
+DF_market_4$market &lt;- ifelse(DF_market_4$market == &quot;Austin&quot;, &quot;Mid City&quot;,DF_market_4$market)
+DF_market_4$market &lt;- ifelse(DF_market_4$market == &quot;D.C.&quot;, &quot;Mid City&quot;,DF_market_4$market)
+DF_market_4$market &lt;- ifelse(DF_market_4$market == &quot;New Orleans&quot;, &quot;Mid City&quot;,DF_market_4$market)
+DF_market_4$market &lt;- ifelse(DF_market_4$market == &quot;Chicago&quot;, &quot;Mid City&quot; ,DF_market_4$market)
+
+DF_market_4$market &lt;- ifelse(DF_market_4$market == &quot;Nashville&quot;, &quot;Mid City&quot; ,DF_market_4$market)
+DF_market_4$market &lt;- ifelse(DF_market_4$market == &quot;Portland&quot;, &quot;Mid City&quot; ,DF_market_4$market)
+DF_market_4$market &lt;- ifelse(DF_market_4$market == &quot;Boston&quot;, &quot;Mid City&quot; ,DF_market_4$market)
+DF_market_4$market &lt;- ifelse(DF_market_4$market == &quot;Denver&quot;, &quot;Mid City&quot; ,DF_market_4$market)
+DF_market_4$market &lt;- ifelse(DF_market_4$market == &quot;Seattle&quot;, &quot;Mid City&quot; ,DF_market_4$market)
+
+
+DF_market_4$market &lt;- ifelse(DF_market_4$market == &quot;Los Angeles&quot;, &quot;Cali&quot; ,DF_market_4$market)
+DF_market_4$market &lt;- ifelse(DF_market_4$market == &quot;San Francisco&quot;, &quot;Cali&quot; ,DF_market_4$market)
+DF_market_4$market &lt;- ifelse(DF_market_4$market == &quot;San Diego&quot;, &quot;Cali&quot; ,DF_market_4$market)
+DF_market_4$market &lt;- ifelse(DF_market_4$market == &quot;Malibu&quot;, &quot;Cali&quot; ,DF_market_4$market)
+DF_market_4$market &lt;- ifelse(DF_market_4$market == &quot;Monterey Region&quot;, &quot;Cali&quot; ,DF_market_4$market)
+DF_market_4$market &lt;- ifelse(DF_market_4$market == &quot;North Carolina Mountains&quot;, &quot;Other (Domestic)&quot; ,DF_market_4$market)
+DF_market_4$market &lt;- ifelse(is.na(DF_market_4$market), &quot;Other (Domestic)&quot; ,DF_market_4$market)
+DF_market_4$market &lt;- ifelse(DF_market_4$market== &quot;Other (Domestic)&quot;,&quot;Other&quot; ,DF_market_4$market)
+DF_market_4$market &lt;- ifelse(DF_market_4$market== &quot;Other (International)&quot;,&quot;Other&quot; ,DF_market_4$market)
+DF_market_4$market &lt;- as.factor(DF_market_4$market)
+
+# 2 markets, NYC and everywhere else
+
+DF_market_2 &lt;- DF_Test
+DF_market_2$market &lt;- as.character(DF_market_2$market)
+
+DF_market_2$market &lt;- ifelse(DF_market_2$market == &quot;New York&quot;, &quot;New York&quot;,&quot;Out of Town&quot;) #send ben a screen shot
+
+DF_market_2$market &lt;- as.factor(DF_market_2$market)
+
+plot_bar(DF_market_2$market)</code></pre>
+<p><img src="/post/article_files/figure-html/unnamed-chunk-2-1.png" width="240" /></p>
+<pre class="r"><code>plot_bar(DF_market_4$market)</code></pre>
+<p><img src="/post/article_files/figure-html/unnamed-chunk-2-2.png" width="240" /></p>
+<pre class="r"><code>plot_bar(DF_market_18$market)</code></pre>
+<p><img src="/post/article_files/figure-html/unnamed-chunk-2-3.png" width="240" /></p>
+<p>Properties</p>
+<pre class="r"><code>DF_prop_5 &lt;- DF_Test
+
+house &lt;- c(&quot;Boat&quot;, &quot;Chalet&quot;, &quot;House&quot;, &quot;Guesthouse&quot;, &quot;Townhouse&quot;, &quot;Vacation home&quot;, &quot;Villa&quot;, &quot;Tiny house&quot;, &quot;Cottage&quot;,&quot;Bungalow&quot; )
+apartment &lt;- c(&quot;Guest suite&quot;,&quot;apartment&quot;, &quot;Apartment&quot;, &quot;Loft&quot;, &quot;Condominium&quot;,&quot;In-law&quot;,&quot;Serviced apartment&quot;,&quot;Dorm&quot;)
+hotel &lt;-  c(&quot;Resort&quot;, &quot;Aparthotel&quot;,&quot;Bed &amp; Breakfast&quot;, &quot;Bed and breakfast&quot;,&quot;Boutique hotel&quot;,&quot;Hotel&quot;, &quot;Hostel&quot;,&quot;Dorm&quot;)
+nature &lt;- c(&quot;Treehouse&quot;, &quot;Cabin&quot;,  &quot;Camper/RV&quot;,  &quot;Earth House&quot;, &quot;Earth house&quot;, &quot;Tent&quot;, &quot;Hut&quot;, &quot;Yurt&quot;, &quot;Tipi&quot;, &quot;Nature Lodging&quot;, &quot;Cave&quot;,&quot;Nature lodge&quot;)
+other &lt;- c(&quot;Other&quot;, &quot;Castle&quot;, &quot;Plane&quot;, &quot;Barn&quot;, &quot;Timeshare&quot;,NA)
+
+DF_prop_5$property_type &lt;- as.character(DF_prop_5$property_type)
+DF_prop_5$property_type &lt;- ifelse(DF_prop_5$property_type %in% house, &quot;house&quot;,DF_prop_5$property_type)
+DF_prop_5$property_type &lt;- ifelse(DF_prop_5$property_type %in% apartment, &quot;apartment&quot;,DF_prop_5$property_type)
+DF_prop_5$property_type &lt;- ifelse(DF_prop_5$property_type %in% hotel, &quot;hotel&quot;,DF_prop_5$property_type)
+DF_prop_5$property_type &lt;- ifelse(DF_prop_5$property_type %in% other, &quot;other&quot;,DF_prop_5$property_type)
+DF_prop_5$property_type &lt;- ifelse(DF_prop_5$property_type %in% nature, &quot;nature&quot;,DF_prop_5$property_type)
+
+DF_prop_5$property_type &lt;- as.factor(DF_prop_5$property_type)
+rm(list = c(&quot;house&quot;, &quot;apartment&quot;, &quot;hotel&quot;, &quot;nature&quot;, &quot;other&quot;))</code></pre>
+<p><img src="/post/article_files/figure-html/unnamed-chunk-4-1.png" width="288" /><img src="/post/article_files/figure-html/unnamed-chunk-4-2.png" width="288" /><img src="/post/article_files/figure-html/unnamed-chunk-4-3.png" width="288" /></p>
+<p>We can also take a peak at the property categories we created:</p>
+<p><img src="/post/article_files/figure-html/unnamed-chunk-5-1.png" width="288" /></p>
+<p>Okay, based on that we’re going to recombine the last three categories into other.</p>
+<pre class="r"><code>DF_prop_2 &lt;- DF_prop_5
+DF_prop_2$property_type &lt;- as.character(DF_prop_2$property_type) 
+DF_prop_2$property_type &lt;- ifelse(DF_prop_2$property_type==&quot;hotel&quot;, &quot;other&quot;, DF_prop_2$property_type)
+DF_prop_2$property_type &lt;- ifelse(DF_prop_2$property_type==&quot;nature&quot;, &quot;other&quot;, DF_prop_2$property_type)
+DF_prop_2$property_type &lt;- as.factor(DF_prop_2$property_type)</code></pre>
+</div>
+<div id="lean-dataset" class="section level2">
+<h2>Lean Dataset</h2>
+<pre class="r"><code>DF.lean &lt;- DF_Test %&gt;%
+  dplyr::select(-host_total_listings_count, -amenities, -description, -host_verifications, -summary)
+DF.lean$host_listings_count[DF.lean$host_listings_count==&quot;&quot;] &lt;- 0
+DF.lean$bathrooms[is.na(DF.lean$bathrooms)] &lt;- 0
+DF.lean$beds[is.na(DF.lean$beds)] &lt;- 0
+DF.lean$bedrooms[is.na(DF.lean$bedrooms)] &lt;- 0
+DF.lean$host_has_profile_pic[is.na(DF.lean$host_has_profile_pic)] &lt;- &#39;f&#39;
+DF.lean$host_identity_verified[is.na(DF.lean$host_identity_verified)] &lt;- &#39;f&#39;
+DF.lean$host_is_superhost[is.na(DF.lean$host_is_superhost)] &lt;- &#39;f&#39;
+DF.lean$host_listings_count[is.na(DF.lean$host_listings_count)] &lt;- 0
+DF.lean$security_deposit[is.na(DF.lean$security_deposit)] &lt;- 0
+DF.lean$cleaning_fee[is.na(DF.lean$cleaning_fee)] &lt;- 0
+DF.lean$host_response_rate[is.na(DF.lean$host_response_rate)] &lt;- 0
+
+DF.lean$host_response_time &lt;- as.character(DF.lean$host_response_time)
+DF.lean$host_response_time[is.na(DF.lean$host_response_time)] &lt;- &quot;unknown&quot;
+DF.lean$host_response_time &lt;- as.factor(DF.lean$host_response_time)
+
+#######WHere to add market type and property type
+
+## DF 1 for different market types
+DF.lean &lt;- DF.lean%&gt;% dplyr::select(-property_type, -market)
+DF.lean &lt;- cbind(DF.lean, DF_market_2$market, DF_prop_5$property_type)
+
+DF.lean &lt;- DF.lean%&gt;%
+  rename(market = `DF_market_2$market` )%&gt;%
+  rename(property_type = `DF_prop_5$property_type`)
+
+
+DF.lean$market &lt;- as.character(DF.lean$market)
+DF.lean$market[is.na(DF.lean$market)] &lt;- &quot;unknown&quot;
+DF.lean$market &lt;- as.factor(DF.lean$market)
+
+DF.lean$property_type &lt;- as.character(DF.lean$property_type)
+DF.lean$property_type[is.na(DF.lean$property_type)] &lt;- &quot;unknown&quot;
+DF.lean$property_type &lt;- as.factor(DF.lean$property_type)
+
+DF.lean$cancellation_policy &lt;- factor(DF.lean$cancellation_policy)
+DF.lean$host_identity_verified&lt;- factor(DF.lean$host_identity_verified)
+DF.lean$host_is_superhost&lt;- factor(DF.lean$host_is_superhost)
+DF.lean$host_response_time&lt;- factor(DF.lean$host_response_time)
+DF.lean$instant_bookable&lt;- factor(DF.lean$instant_bookable)
+
+
+#only numeric variables
+DF.leana &lt;- DF.lean[ , purrr::map_lgl(DF.lean, is.numeric)]
+
+#remove the listing id into seperate objects and delete
+listing_ids &lt;- DF.lean$Listing_ID
+target_class &lt;- DF.lean$high_booking_rate
+DF.lean &lt;- DF.lean %&gt;%
+  dplyr::select(-high_booking_rate, -Listing_ID)
+
+#making the weird max nights above 1825 to 1825
+DF.lean$maximum_nights &lt;- ifelse(DF.lean$maximum_nights&gt;1825, 1825, DF.lean$maximum_nights)
+#making beds real or non real bed
+DF.lean$bed_type &lt;- as.character(DF.lean$bed_type)
+DF.lean$bed_type &lt;- ifelse(DF.lean$bed_type==&quot;Real Bed&quot;, 1,0)
+DF.lean$bed_type &lt;- as.factor(DF.lean$bed_type)
+
+# Add new variable for beds per bedroom
+DF.lean$beds_per_bedroom &lt;- ifelse(DF.lean$bedrooms != 0, DF.lean$beds/DF.lean$bedrooms, DF.lean$beds)
+
+# Add new variables for availabilities
+DF.lean$availability_3060 &lt;- DF.lean$availability_60 - DF.lean$availability_30
+DF.lean$availability_6090 &lt;- DF.lean$availability_90 - DF.lean$availability_60
+
+DF.lean &lt;- DF.lean %&gt;% dplyr::select(-availability_365, -availability_60, -availability_90,-availability_30,-latitude, -longitude)
+
+DF.lean &lt;- cbind(target_class, DF.lean)
+DF.lean &lt;- DF.lean %&gt;% rename(high_booking_rate = target_class)
+
+DF.lean$cancellation_policy &lt;- as.character(DF.lean$cancellation_policy)
+DF.lean &lt;- DF.lean %&gt;%
+  filter(cancellation_policy != &quot;no_refunds&quot;) #because of issues with test data
+DF.lean$cancellation_policy &lt;- as.factor(DF.lean$cancellation_policy)
+
+levels(DF.lean$high_booking_rate) &lt;- c(&quot;0&quot;, &quot;1&quot;)</code></pre>
+</div>
+<div id="modified-dataset" class="section level2">
+<h2>Modified Dataset</h2>
+<pre class="r"><code>DF.1 &lt;- backup %&gt;%
+  dplyr::select(-host_total_listings_count,-market)
+
+DF.1$security_deposit[is.na(DF.1$security_deposit)] &lt;- 0
+DF.1$cleaning_fee[is.na(DF.1$cleaning_fee)] &lt;- 0
+
+
+DF_categ &lt;- DF.1[ , purrr::map_lgl(DF.1, is.character)]
+rwww &lt;- colnames(DF_categ)
+DF_categ &lt;- DF_categ %&gt;% dplyr::select(-summary, -description)
+DF_categ[sapply(DF_categ, is.character)] &lt;- lapply(DF_categ[sapply(DF_categ, is.character)], 
+                                                   as.factor)
+
+DF.2 &lt;- dplyr::select(DF.1 , -rwww)
+DF.1 &lt;- cbind(DF.2,DF_categ)
+
+
+# Add new variable for beds per bedroom
+DF.1$beds_per_bedroom &lt;- ifelse(DF.1$bedrooms != 0, DF.1$beds/DF.1$bedrooms, DF.1$beds)
+
+#Might want to comment this out # Add new variables for availabilities    
+ DF.1$availability_3060 &lt;- DF.1$availability_60 - DF.1$availability_30
+ DF.1$availability_6090 &lt;- DF.1$availability_90 - DF.1$availability_60
+ DF.1 &lt;- DF.1 %&gt;%
+   dplyr::select(-availability_30, -availability_365, -availability_60,-availability_90)
+
+
+DF.1 &lt;- DF.1 %&gt;%
+  dplyr::select(-latitude, -longitude, - amenities, -Listing_ID,-host_verifications,-property_type)
+
+
+#######WHere to add market type and property type
+
+## DF 1 for different market types
+DF.1.m2 &lt;- cbind(DF.1, DF_market_2$market, DF_prop_5$property_type)
+
+DF.1.m2 &lt;- DF.1.m2%&gt;%
+  rename(market = `DF_market_2$market` )%&gt;%
+  rename(property_type = `DF_prop_5$property_type`)
+
+DF.1.m2$high_booking_rate &lt;- factor(DF.1.m2$high_booking_rate)
+
+#adding levels of NA
+DF.1.m2$host_response_time &lt;-addNA(DF.1.m2$host_response_time)
+
+
+DF.1.m2$host_response_rate[is.na(DF.1.m2$host_response_rate)] &lt;- 0
+
+DF.1.m2$cancellation_policy &lt;- as.character(DF.1.m2$cancellation_policy)
+DF.1.m2$cancellation_policy &lt;- ifelse(DF.1.m2$cancellation_policy == &quot;no_refunds&quot;,&quot;super_strict_60&quot;,DF.1.m2$cancellation_policy)
+DF.1.m2$cancellation_policy &lt;- as.factor(DF.1.m2$cancellation_policy)
+
+
+#basic KNN Imputation
+
+knnOutput &lt;- DMwR::knnImputation(DF.1.m2[, !names(DF.1.m2) %in% &quot;high_booking_rate&quot;])  # perform knn imputation.
+
+DF.1.m2 &lt;- cbind(DF.1.m2$high_booking_rate, knnOutput)
+
+DF.1.m2 &lt;- rename(DF.1.m2, high_booking_rate=`DF.1.m2$high_booking_rate`)</code></pre>
+</div>
+</div>
+<div id="finding-best-datasets" class="section level1">
+<h1>Finding Best Datasets</h1>
+<p>So, the first thing done was to discover which transformations worked the best. Both datasets had the following transformations created:<br />
+* Center<br />
+* Scale<br />
+* Center &amp; Scale<br />
+* BoxCox<br />
+* BoxCox &amp; Center &amp; Scale<br />
+* Yeo Johnson</p>
+<p>Then, each dataset was run through an ordinary logistical regression and two random forests. Both random forests ran with 5 folds. The first balanced classes and used a modulo fold assignment while the second does a pure stratified sampling.</p>
+<p>The code and results are below.</p>
+<div id="operation" class="section level2">
+<h2>Operation</h2>
+<p>Complete the transformation</p>
+<pre class="r"><code>foo &lt;- DF.lean
+
+target_class_train &lt;- foo$high_booking_rate
+foo &lt;- foo %&gt;% select(-high_booking_rate)
+
+preProcValues &lt;- preProcess(foo, method= c(&quot;YeoJohnson&quot;))
+trainTransformed &lt;- predict(preProcValues, foo)
+
+#recomb
+foo &lt;- cbind(target_class_train,trainTransformed)
+foo &lt;- foo %&gt;% rename(high_booking_rate = target_class_train)</code></pre>
+<p>The logistical regression.</p>
+<pre class="r"><code>datafr &lt;- DF.lean
+
+set.seed(9444)
+trainIndex &lt;- createDataPartition(datafr$high_booking_rate, p = .8,
+                                  list = FALSE, 
+                                  times = 1)
+training &lt;- datafr[trainIndex,]
+validation &lt;- datafr[-trainIndex,]
+
+
+full_log &lt;- glm(high_booking_rate~., data=training, family=&quot;binomial&quot;)
+full_log_preds &lt;- predict(full_log, newdata=validation, type=&quot;response&quot;)
+full_log_class &lt;- ifelse(full_log_preds&gt;0.5,1,0)
+
+table.lean &lt;- table(validation$high_booking_rate, full_log_class)
+confusionMatrix(table.lean)</code></pre>
+<p>The two random forests.</p>
+<pre class="r"><code>localH2O &lt;- h2o.init(nthreads = -1)
+y &lt;-  1 #that is the number it is, likely 1 for me
+x &lt;- c(2:30)
+
+datafr.h20 &lt;- as.h2o(datafr)
+
+nfolds=5
+splits &lt;- h2o.splitFrame(data = datafr.h20, 
+                         ratios = c(0.7, 0.15),  #partition data into 70%, 15%, 15% chunks
+                         seed = 1)  #setting a seed will guarantee reproducibility
+
+train &lt;- splits[[1]]
+valid &lt;- splits[[2]]
+test &lt;- splits[[3]]
+my_rf_mod &lt;- h2o.randomForest(x = x,
+                              y = y,
+                              training_frame = train,
+                              nfolds = nfolds,
+                              balance_classes = TRUE,
+                              fold_assignment = &quot;Modulo&quot;,
+                              keep_cross_validation_predictions = TRUE,
+                              seed = 1)
+
+my_rf_strat &lt;- h2o.randomForest(x = x,
+                                y = y,
+                                training_frame = train,
+                                nfolds = nfolds,
+                                fold_assignment = &quot;Stratified&quot;,
+                                keep_cross_validation_predictions = TRUE,
+                                seed = 1)
+
+
+
+h2o.performance(my_rf_mod,test)
+h2o.performance(my_rf_strat,test)
+
+h2o.shutdown(prompt = TRUE)</code></pre>
+<p>The results:</p>
+<table class="table" style="margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+model
+</th>
+<th style="text-align:right;">
+logit_results
+</th>
+<th style="text-align:right;">
+rf_modulo
+</th>
+<th style="text-align:right;">
+rf_stratified
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+Modified
+</td>
+<td style="text-align:right;">
+0.7841
+</td>
+<td style="text-align:right;">
+0.7896084
+</td>
+<td style="text-align:right;">
+0.7924612
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Modified Center
+</td>
+<td style="text-align:right;">
+0.7841
+</td>
+<td style="text-align:right;">
+0.7841833
+</td>
+<td style="text-align:right;">
+0.7738359
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Modified Scale
+</td>
+<td style="text-align:right;">
+0.7841
+</td>
+<td style="text-align:right;">
+0.8010347
+</td>
+<td style="text-align:right;">
+0.7841833
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Modified Center Scale
+</td>
+<td style="text-align:right;">
+0.7841
+</td>
+<td style="text-align:right;">
+0.7984940
+</td>
+<td style="text-align:right;">
+0.7920177
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Modified BoxCox
+</td>
+<td style="text-align:right;">
+0.7867
+</td>
+<td style="text-align:right;">
+0.7948263
+</td>
+<td style="text-align:right;">
+0.7945307
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Modified Center Scale Box
+</td>
+<td style="text-align:right;">
+0.7867
+</td>
+<td style="text-align:right;">
+0.7960089
+</td>
+<td style="text-align:right;">
+0.7825573
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Lean
+</td>
+<td style="text-align:right;">
+0.7885
+</td>
+<td style="text-align:right;">
+0.7958610
+</td>
+<td style="text-align:right;">
+0.7951220
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Lean Center
+</td>
+<td style="text-align:right;">
+0.7885
+</td>
+<td style="text-align:right;">
+0.7994087
+</td>
+<td style="text-align:right;">
+0.7824095
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Lean Scale
+</td>
+<td style="text-align:right;">
+0.7885
+</td>
+<td style="text-align:right;">
+0.7878788
+</td>
+<td style="text-align:right;">
+0.7955654
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Lean BoxCox
+</td>
+<td style="text-align:right;">
+0.7888
+</td>
+<td style="text-align:right;">
+0.7920177
+</td>
+<td style="text-align:right;">
+0.8005913
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Lean Scale center Boxcox
+</td>
+<td style="text-align:right;">
+0.7888
+</td>
+<td style="text-align:right;">
+0.7983740
+</td>
+<td style="text-align:right;">
+0.8002956
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Lean YeoJohnson
+</td>
+<td style="text-align:right;">
+0.7888
+</td>
+<td style="text-align:right;">
+0.7900961
+</td>
+<td style="text-align:right;">
+0.8097561
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Modified YeoJohnson
+</td>
+<td style="text-align:right;">
+0.7872
+</td>
+<td style="text-align:right;">
+0.8029564
+</td>
+<td style="text-align:right;">
+0.7899483
+</td>
+</tr>
+</tbody>
+</table>
+<p>next step is determining which market and property levels to use.</p>
+</div>
+<div id="market-level-determination" class="section level2">
+<h2>market level determination</h2>
+<p>Now we’ll determine which of the market determinations to use. It was quickly seen that the property type with 5 categories was yielding better results, in terms of accuracy. The 12 best datasets above were varied with the three different market level types and tested the the same way as above.</p>
+<table class="table" style="margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+model
+</th>
+<th style="text-align:right;">
+market_type
+</th>
+<th style="text-align:right;">
+logit_results
+</th>
+<th style="text-align:right;">
+rf_modulo
+</th>
+<th style="text-align:right;">
+rf_stratified
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+Lean
+</td>
+<td style="text-align:right;">
+2
+</td>
+<td style="text-align:right;">
+0.7896
+</td>
+<td style="text-align:right;">
+0.8000000
+</td>
+<td style="text-align:right;">
+0.8088692
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Lean BoxCox
+</td>
+<td style="text-align:right;">
+2
+</td>
+<td style="text-align:right;">
+0.7910
+</td>
+<td style="text-align:right;">
+0.7974871
+</td>
+<td style="text-align:right;">
+0.8073910
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Lean YeoJohnson
+</td>
+<td style="text-align:right;">
+2
+</td>
+<td style="text-align:right;">
+0.7929
+</td>
+<td style="text-align:right;">
+0.8031042
+</td>
+<td style="text-align:right;">
+0.8031042
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Modified
+</td>
+<td style="text-align:right;">
+2
+</td>
+<td style="text-align:right;">
+0.7858
+</td>
+<td style="text-align:right;">
+0.8094605
+</td>
+<td style="text-align:right;">
+0.8094605
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Modified Scale
+</td>
+<td style="text-align:right;">
+2
+</td>
+<td style="text-align:right;">
+0.7858
+</td>
+<td style="text-align:right;">
+0.8010347
+</td>
+<td style="text-align:right;">
+0.8022173
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Modified YeoJohnson
+</td>
+<td style="text-align:right;">
+2
+</td>
+<td style="text-align:right;">
+0.7893
+</td>
+<td style="text-align:right;">
+0.8029564
+</td>
+<td style="text-align:right;">
+0.7980783
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Lean
+</td>
+<td style="text-align:right;">
+4
+</td>
+<td style="text-align:right;">
+0.7892
+</td>
+<td style="text-align:right;">
+0.7963045
+</td>
+<td style="text-align:right;">
+0.7918699
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Lean BoxCox
+</td>
+<td style="text-align:right;">
+4
+</td>
+<td style="text-align:right;">
+0.7924
+</td>
+<td style="text-align:right;">
+0.8001478
+</td>
+<td style="text-align:right;">
+0.7831486
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Lean YeoJohnson
+</td>
+<td style="text-align:right;">
+4
+</td>
+<td style="text-align:right;">
+0.7919
+</td>
+<td style="text-align:right;">
+0.8048780
+</td>
+<td style="text-align:right;">
+0.7920177
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Modified
+</td>
+<td style="text-align:right;">
+4
+</td>
+<td style="text-align:right;">
+0.7843
+</td>
+<td style="text-align:right;">
+0.7821138
+</td>
+<td style="text-align:right;">
+0.7920177
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Modified Scale
+</td>
+<td style="text-align:right;">
+4
+</td>
+<td style="text-align:right;">
+0.7843
+</td>
+<td style="text-align:right;">
+0.8022173
+</td>
+<td style="text-align:right;">
+0.7927568
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Modified YeoJohnson
+</td>
+<td style="text-align:right;">
+4
+</td>
+<td style="text-align:right;">
+0.7875
+</td>
+<td style="text-align:right;">
+0.7980783
+</td>
+<td style="text-align:right;">
+0.8004435
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Lean
+</td>
+<td style="text-align:right;">
+18
+</td>
+<td style="text-align:right;">
+0.7896
+</td>
+<td style="text-align:right;">
+0.8000000
+</td>
+<td style="text-align:right;">
+0.8088692
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Lean BoxCox
+</td>
+<td style="text-align:right;">
+18
+</td>
+<td style="text-align:right;">
+0.7910
+</td>
+<td style="text-align:right;">
+0.7974871
+</td>
+<td style="text-align:right;">
+0.8073910
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Lean YeoJohnson
+</td>
+<td style="text-align:right;">
+18
+</td>
+<td style="text-align:right;">
+0.7929
+</td>
+<td style="text-align:right;">
+0.8031042
+</td>
+<td style="text-align:right;">
+0.7961567
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Modified
+</td>
+<td style="text-align:right;">
+18
+</td>
+<td style="text-align:right;">
+0.7858
+</td>
+<td style="text-align:right;">
+0.8094605
+</td>
+<td style="text-align:right;">
+0.7982262
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Modified Scale
+</td>
+<td style="text-align:right;">
+18
+</td>
+<td style="text-align:right;">
+0.7858
+</td>
+<td style="text-align:right;">
+0.8022173
+</td>
+<td style="text-align:right;">
+0.7881744
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Modified YeoJohnson
+</td>
+<td style="text-align:right;">
+18
+</td>
+<td style="text-align:right;">
+0.7893
+</td>
+<td style="text-align:right;">
+0.7980783
+</td>
+<td style="text-align:right;">
+0.7974871
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div id="modeling-on-the-best-4-datasets" class="section level1 tabset">
+<h1>Modeling on the best 4 datasets</h1>
+<div id="summary-of-modeling" class="section level2">
+<h2>Summary of Modeling</h2>
+<p>This was, admittely, a bit of throwing different models at the training data.Being for a class, there was an attempt to demonstrate and ability to code all of these. Furthermore, it being organized like a kaggle competition with points on the line, why not give it a try.</p>
+<p>Here are the results, code can be seen in the other tab.</p>
+<table class="table" style="margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+datasets
+</th>
+<th style="text-align:right;">
+ridge_cv
+</th>
+<th style="text-align:right;">
+lasso_cv
+</th>
+<th style="text-align:right;">
+LDA
+</th>
+<th style="text-align:right;">
+SVM.Linear
+</th>
+<th style="text-align:right;">
+SVM.Radial
+</th>
+<th style="text-align:right;">
+Gradient.Boosting.Machine
+</th>
+<th style="text-align:right;">
+Xgboost
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+Modified 18 Markets
+</td>
+<td style="text-align:right;">
+0.7818994
+</td>
+<td style="text-align:right;">
+0.7890783
+</td>
+<td style="text-align:right;">
+0.7712
+</td>
+<td style="text-align:right;">
+0.7846
+</td>
+<td style="text-align:right;">
+0.8100
+</td>
+<td style="text-align:right;">
+0.8097561
+</td>
+<td style="text-align:right;">
+0.8300
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Lean 18 Markets
+</td>
+<td style="text-align:right;">
+0.7822627
+</td>
+<td style="text-align:right;">
+0.7892643
+</td>
+<td style="text-align:right;">
+0.7764
+</td>
+<td style="text-align:right;">
+0.7912
+</td>
+<td style="text-align:right;">
+0.8105
+</td>
+<td style="text-align:right;">
+0.8116778
+</td>
+<td style="text-align:right;">
+0.8248
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Lean 2 Markets YeoJohnson
+</td>
+<td style="text-align:right;">
+0.7912786
+</td>
+<td style="text-align:right;">
+0.7909675
+</td>
+<td style="text-align:right;">
+0.7888
+</td>
+<td style="text-align:right;">
+0.7912
+</td>
+<td style="text-align:right;">
+0.8157
+</td>
+<td style="text-align:right;">
+0.8031042
+</td>
+<td style="text-align:right;">
+0.8226
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Modified 4 markets YeoJohnson
+</td>
+<td style="text-align:right;">
+0.7912786
+</td>
+<td style="text-align:right;">
+0.7925233
+</td>
+<td style="text-align:right;">
+0.7888
+</td>
+<td style="text-align:right;">
+0.7906
+</td>
+<td style="text-align:right;">
+0.8161
+</td>
+<td style="text-align:right;">
+0.8121212
+</td>
+<td style="text-align:right;">
+0.8273
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="code-for-modeling" class="section level2">
+<h2>Code for Modeling</h2>
+<p>All data was partitioned into 80% training data and 20% validation data. This was deemed a reasonable split given both the amount of data and the relative size of the testing data (the validation contains ~8000 with testing at ~7000). Except for the GBMs which used an explicit validation dataset in tuning.</p>
+<p>FOr both Ridge and Lasso, the model is completed on the entire dataset in a matrix form. This is done here.</p>
+<pre class="r"><code>dfram &lt;- DF.1.m4.YeoJohnson #swapped through datasets here
+
+allData &lt;- model.matrix (~ .-1, dfram[,c(1:30)])
+allData_X &lt;- model.matrix( ~ .-1, dfram[,c(2:30)])</code></pre>
+<p>Ridge Regression</p>
+<pre class="r"><code>ridge = cv.glmnet(as.matrix(allData_X), dfram$high_booking_rate, family=&quot;binomial&quot;, alpha=0)
+best.lambda=ridge$lambda.min
+ridge_probs = predict(ridge, s=best.lambda, newx=allData_X, type=&quot;response&quot;)
+ridge_class = ifelse(ridge_probs&gt;0.45,1,0) #Used a 45% cutoff
+
+## Calculate accuracy:
+sum(ifelse(ridge_class==dfram$high_booking_rate,1,0))/nrow(dfram)</code></pre>
+<p>Lasso</p>
+<pre class="r"><code>lasso = cv.glmnet(as.matrix(allData_X), dfram$high_booking_rate, family=&quot;binomial&quot;, alpha=1)
+best.lambda2=lasso$lambda.min
+lasso_probs = predict(lasso, s=best.lambda2, newx=allData_X, type=&quot;response&quot;)
+lasso_class = ifelse(lasso_probs&gt;0.5,1,0)
+
+## Calculate accuracy:
+sum(ifelse(lasso_class==dfram$high_booking_rate,1,0))/nrow(dfram)</code></pre>
+<p>Linear Discriminant Analysis</p>
+<pre class="r"><code>lda.fit &lt;- lda(high_booking_rate~., data = training)
+
+lda.pred &lt;- predict(lda.fit, validation)
+lda.class &lt;- lda.pred$class
+lda.pred &lt;- lda.pred$posterior[,2]
+
+log1 &lt;- table(lda.class, validation$high_booking_rate)
+confusionMatrix(log1)</code></pre>
+<p>Support Vector Machines: Linear and Radial Kernels</p>
+<pre class="r"><code>set.seed(9444)
+trainIndex &lt;- createDataPartition(datafr$high_booking_rate, p = .8,
+                                  list = FALSE, 
+                                  times = 1)
+training &lt;- datafr[trainIndex,]
+validation &lt;- datafr[-trainIndex,]
+
+svm_Linear &lt;- svm(high_booking_rate~.,data = training, method=&quot;C-classification&quot;, kernel=&quot;linear&quot;)
+
+svm.pred &lt;- predict(svm_Linear, validation, type=&quot;prediction&quot;)
+mtab&lt;-table(svm.pred,validation$high_booking_rate)
+confusionMatrix(mtab)
+
+
+svm_Rad &lt;- svm(high_booking_rate~.,data = training,method=&quot;C-classification&quot;, kernel=&quot;radial&quot;,  probability = TRUE)
+
+svm.pred &lt;- predict(svm_Rad, validation, type=&quot;prediction&quot;)
+mtab&lt;-table(svm.pred,validation$high_booking_rate)
+confusionMatrix(mtab)</code></pre>
+<p>GBM tuning The parameter lists were adjusted for each dataset. This strategy and code was found online.</p>
+<pre class="r"><code>#datafr[,1] &lt;- NULL
+localH2O &lt;- h2o.init(nthreads = -1)
+
+y &lt;-  1 #that is the number it is, likely 1 for me
+x &lt;- c(2:30)
+
+datafr.h20 &lt;- as.h2o(datafr)
+
+nfolds=5
+splits &lt;- h2o.splitFrame(data = datafr.h20, 
+                         ratios = c(0.7, 0.15)  #partition data into 70%, 15%, 15% chunks
+                        )  
+train &lt;- splits[[1]]
+valid &lt;- splits[[2]]
+test &lt;- splits[[3]]
+
+
+
+#Cartesian grid of gbm
+# GBM hyperparamters
+h2o.table(train[y])
+
+
+gbm_params1 &lt;- list(learn_rate = c(0.01, 0.1),
+                    max_depth = c(3, 10, 1),
+                    sample_rate = c(0.8, 1.0),
+                    col_sample_rate = c(0.2, 0.5, 1.0))
+
+# Train and validate a grid of GBMs
+gbm_grid1 &lt;- h2o.grid(&quot;gbm&quot;, x = x, y = y,
+                      grid_id = &quot;gbm_grid1&quot;,
+                      training_frame = train,
+                      validation_frame = valid,
+                      ntrees = 100,
+                      seed = 1,
+                      hyper_params = gbm_params1)
+
+# Get the grid results, sorted by AUC
+gbm_gridperf1 &lt;- h2o.getGrid(grid_id = &quot;gbm_grid1&quot;, 
+                             sort_by = &quot;auc&quot;, 
+                             decreasing = TRUE)
+print(gbm_gridperf1)
+# Random Grid Search
+
+# GBM hyperparamters
+gbm_params2 &lt;- list(learn_rate = seq(0.1, 1, 0.05),
+                    max_depth = seq(3, 25, 1),
+                    sample_rate = seq(0.5, 1.0, 0.1),
+                    col_sample_rate = seq(0.1, 1.0, 0.1))
+search_criteria2 &lt;- list(strategy = &quot;RandomDiscrete&quot;, 
+                         max_models = 60)
+
+# Train and validate a grid of GBMs
+gbm_grid2 &lt;- h2o.grid(&quot;gbm&quot;, x = x, y = y,
+                      grid_id = &quot;gbm_grid2&quot;,
+                      training_frame = train,
+                      validation_frame = valid,
+                      ntrees = 100,
+                      seed = 1,
+                      hyper_params = gbm_params2,
+                      search_criteria = search_criteria2)
+
+gbm_gridperf2 &lt;- h2o.getGrid(grid_id = &quot;gbm_grid2&quot;, 
+                             sort_by = &quot;auc&quot;, 
+                             decreasing = TRUE)
+print(gbm_gridperf2)
+
+###
+
+
+gbm_params &lt;- list(learn_rate = seq(0.05, 1, 0.01),  #updated
+                   max_depth = seq(3, 13, 1),
+                   sample_rate = seq(0.6, 1.0, 0.1),  #updated
+                   col_sample_rate = seq(0.1, 0.8, 0.1))
+
+search_criteria &lt;- list(strategy = &quot;RandomDiscrete&quot;, 
+                        max_runtime_secs = 480)  #updated
+
+gbm_grid &lt;- h2o.grid(&quot;gbm&quot;, x = x, y = y,
+                     grid_id = &quot;gbm_grid4&quot;,
+                     training_frame = train,
+                     validation_frame = test,
+                     ntrees = 250,
+                     seed = 1,
+                     hyper_params = gbm_params,
+                     distribution =&quot;bernoulli&quot;,
+                     search_criteria = search_criteria)
+
+gbm_gridperf &lt;- h2o.getGrid(grid_id = &quot;gbm_grid4&quot;, 
+                            sort_by = &quot;auc&quot;, 
+                            decreasing = TRUE)
+print(gbm_gridperf)
+
+best_gbm_model_id &lt;- gbm_gridperf1@model_ids[[1]]
+best_gbm &lt;- h2o.getModel(best_gbm_model_id)
+
+#Test set prediction
+best_gbm_perf &lt;- h2o.performance(model = best_gbm, 
+                                 newdata = test)
+h2o.confusionMatrix(best_gbm_perf)  
+
+
+h2o.shutdown(prompt = TRUE)</code></pre>
+<p>Xgboost</p>
+<pre class="r"><code>#create tasks
+setDF(train)
+setDF(test)
+traintask &lt;- makeClassifTask(data = train,target = &quot;high_booking_rate&quot;)
+testtask &lt;- makeClassifTask(data = test,target = &quot;high_booking_rate&quot;)
+
+
+#do one hot encoding
+traintask &lt;- createDummyFeatures(obj = traintask)
+testtask &lt;- createDummyFeatures(obj = testtask)
+
+lrn &lt;- makeLearner(&quot;classif.xgboost&quot;,predict.type = &quot;prob&quot;)
+lrn$par.vals &lt;- list(
+  objective=&quot;binary:logistic&quot;,
+  eval_metric=&quot;error&quot;,
+  nrounds=200L,
+  eta=0.1
+)
+
+#set parameter space
+params &lt;- makeParamSet(
+  makeDiscreteParam(&quot;booster&quot;,values = c(&quot;gbtree&quot;,&quot;gblinear&quot;)),
+  makeIntegerParam(&quot;max_depth&quot;,lower = 3L,upper = 25L),
+  makeNumericParam(&quot;min_child_weight&quot;,lower = 1L,upper = 10L),
+  makeNumericParam(&quot;subsample&quot;,lower = 0.5,upper = 1),
+  makeNumericParam(&quot;colsample_bytree&quot;,lower = 0.5,upper = 1)
+)
+
+#set resampling strategy
+rdesc &lt;- makeResampleDesc(&quot;CV&quot;,stratify = T,iters=5L)
+
+#search strategy
+ctrl &lt;- makeTuneControlRandom(maxit = 5L, tune.threshold = TRUE)
+
+
+#set parallel backend
+library(parallel)
+library(parallelMap)
+parallelStartSocket(cpus = 5)
+
+tic()
+#parameter tuning
+mytune1 &lt;- tuneParams(learner = lrn
+                     ,task = traintask
+                     ,resampling = rdesc
+                     ,measures = auc
+                     ,par.set = params
+                     ,control = ctrl
+                     ,show.info = T)
+
+toc()
+#set hyperparameters
+lrn_tune1 &lt;- setHyperPars(lrn,par.vals = mytune1$x)
+
+#train model
+xgmodel1 &lt;- mlr::train(learner = lrn_tune1,task = traintask)
+
+#predict model
+xgpred1 &lt;- predict(xgmodel1,testtask)
+confusionMatrix(xgpred1$data$response,xgpred1$data$truth)</code></pre>
+</div>
+</div>
+<div id="conclusions" class="section level1">
+<h1>Conclusions</h1>
+<p>Overall, Xgboost was by far the best model, regardless of dataset. Submitting the best resulted in a validation accuracy of ~83% and got 83.21% on the held-out testing dataset. This was only 0.0035 percent off of the top submission.</p>
+</div>
+<div id="trying-smote" class="section level1">
+<h1>Trying SMOTE</h1>
+<p>To combat this, we tried several re-sampling techniques. The first was on the actual data where we performed SMOTE (Synthetic Minority Over-sampling Technique) on the datasets. SMOTE takes the minority class and creates brand new observations through a KNN procedure. We used the default of 5 nearest neighbors. It is important to notice that SMOTE was only performed on the training set of the data and not the validation set. This was to ensure that validation results would simulate the results on true testing data.</p>
+<p>SMOTE was tested on our best dataset with the best model (Modified 4 markets Yeo Johnson, Xgboost). It did not lead to any improvement. However, it did result in a slight improved parity in errors between the classes. Overall, it was not helpful in this scenario.</p>
+<pre class="r"><code>datafr &lt;- DF.1.m2
+
+names(datafr)
+datafr[,1] &lt;- NULL
+
+set.seed(9444)
+trainIndex &lt;- createDataPartition(datafr$high_booking_rate, p = .8,
+                                  list = FALSE, 
+                                  times = 1)
+train &lt;- datafr[trainIndex,]
+test &lt;- datafr[-trainIndex,]
+
+#create tasks
+setDF(train)
+setDF(test)
+traintask &lt;- makeClassifTask(data = train,target = &quot;high_booking_rate&quot;)
+testtask &lt;- makeClassifTask(data = test,target = &quot;high_booking_rate&quot;)
+
+##
+##What&#39;s DIFFERENT
+task.smote = smote(traintask, rate = 3, nn = 5)
+
+testtask &lt;- createDummyFeatures(obj = testtask)
+train.smote &lt;- createDummyFeatures(obj = task.smote)
+####
+
+
+lrn &lt;- makeLearner(&quot;classif.xgboost&quot;,predict.type = &quot;prob&quot;)
+lrn$par.vals &lt;- list(
+  objective=&quot;binary:logistic&quot;,
+  eval_metric=&quot;error&quot;,
+  nrounds=200L,
+  eta=0.1
+)
+
+#set parameter space
+params &lt;- makeParamSet(
+  makeDiscreteParam(&quot;booster&quot;,values = c(&quot;gbtree&quot;,&quot;gblinear&quot;)),
+  makeIntegerParam(&quot;max_depth&quot;,lower = 3L,upper = 25L),
+  makeNumericParam(&quot;min_child_weight&quot;,lower = 1L,upper = 10L),
+  makeNumericParam(&quot;subsample&quot;,lower = 0.5,upper = 1),
+  makeNumericParam(&quot;colsample_bytree&quot;,lower = 0.5,upper = 1)
+)
+
+#set resampling strategy
+rdesc &lt;- makeResampleDesc(&quot;CV&quot;,stratify = T,iters=5L)
+
+#search strategy
+ctrl &lt;- makeTuneControlRandom(maxit = 5L, tune.threshold = TRUE)
+
+
+#set parallel backend
+#library(parallel)
+#library(parallelMap)
+parallelStartSocket(cpus = 5)
+
+tic()
+#parameter tuning
+mytune1 &lt;- tuneParams(learner = lrn
+                     ,task = train.smote
+                     ,resampling = rdesc
+                     ,measures = auc
+                     ,par.set = params
+                     ,control = ctrl
+                     ,show.info = T)
+
+toc()
+#set hyperparameters
+lrn_tune1 &lt;- setHyperPars(lrn,par.vals = mytune1$x)
+
+#train model
+xgmodel1 &lt;- mlr::train(learner = lrn_tune1,task = train.smote)
+
+#predict model
+xgpred1 &lt;- predict(xgmodel1,testtask)
+confusionMatrix(xgpred1$data$response,xgpred1$data$truth)</code></pre>
+<div id="addendum" class="section level3">
+<h3>Addendum</h3>
+<p>NLP: Within NLP I also attempted several methods on both the amenities and description variables. On the description variable I used the text2vec, tm, and tidytext packages to create vocabularies, prune unused words from the vocab, and remove stopwords. Then, I tried two different sentiment analysis dictionaries, afinn and and nrc. Afinn gives a relative score of positive/negative, while nrc only classifies the word but into several emotions rather than only positive/negative. Neither set of these added variables added significant predictive poIr. The next thing tried was LDA (Latent Dirichlet Allocation), which is a type of topic modeling that uses the text to extract potential clusters prespecified. This method seemed to work best with three topics (they also seemed to be meaningful clusters); hoIver, even at its most effective, it did not add predictive poIr.</p>
+<p>The last thing attempted was creating a non-pruned vocab of the amenities and splitting them into dummy variables I felt might be significant. It is possible that this might lead to significant improvement, but would require more analysis into individual variables. When all added variables that I believed would be “significant” (e.g. wifi, breakfast included, park) there was not much improvement, but some of the variables appeared to be significant.</p>
+<p>A lot of this was attempted early on in the project and I’d like to come back and try it with some of the transformed datasets found above.</p>
+</div>
+</div>
+
+                </section>
+            </article>
+
+            
+                <a class="twitter" href="https://twitter.com/intent/tweet?text=%2fpost%2farticle%2f - Airbnb%20Predictions%20Project "><span class="icon-twitter"> tweet</span></a>
+
+<a class="facebook" href="#" onclick="
+    window.open(
+      'https://www.facebook.com/sharer/sharer.php?u='+encodeURIComponent(location.href),
+      'facebook-share-dialog',
+      'width=626,height=436');
+    return false;"><span class="icon-facebook-rect"> Share</span>
+</a>
+
+            
+
+            
+                <div id="disqus_thread"></div>
+<script type="text/javascript">
+    var disqus_shortname = 'your_disqus_short_name'; 
+
+     
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+<noscript>Please enable JavaScript to view the <a href="https://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+</div>
+
+            
+
+            
+                <ul id="post-list" class="archive readmore">
+    <h3>Read more</h3>
+
+    
+    
+    
+        <li>
+            <a href="/post/2019-01-02-transit/">A Question on the Efficiency of Transit in Absurd Situations<aside class="dates">Aug 22 2018</aside></a>
+        </li>
+    
+</ul>
+
+            
+
+            <footer id="footer">
+    
+        <div id="social">
+
+	
+	
+    <a class="symbol" href="effi.feldblum@gmail.com">
+        <i class="fa fa-email-square"></i>
+    </a>
+    
+    <a class="symbol" href="https://www.github.com/EffiFeld">
+        <i class="fa fa-github-square"></i>
+    </a>
+    
+
+
+</div>
+
+    
+    <p class="small">
+    
+       © Copyright 2019 <i class="fa fa-heart" aria-hidden="true"></i> Effi Feldblum
+    
+    </p>
+    <p class="small">
+        Powered by <a href="http://www.gohugo.io/">Hugo</a> Theme By <a href="https://github.com/nodejh/hugo-theme-cactus-plus">nodejh</a>
+    </p>
+</footer>
+
+        </section>
+
+        <script src="/js/jquery-3.3.1.min.js"></script>
+<script src="/js/main.js"></script>
+<script src="/js/highlight.min.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+
+
+
+
+  
+<script type="application/javascript">
+var doNotTrack = false;
+if (!doNotTrack) {
+	(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+	(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+	m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+	})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+	ga('create', 'your_google_analytics_id', 'auto');
+	
+	ga('send', 'pageview');
+}
+</script>
+
+
+
+
+
+    </body>
+</html>

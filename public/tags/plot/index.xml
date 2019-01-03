@@ -6,29 +6,27 @@
     <description>Recent content in Plot on Portfolio</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en</language>
-    <lastBuildDate>Wed, 02 Jan 2019 00:00:00 +0000</lastBuildDate>
+    <lastBuildDate>Mon, 10 Dec 2018 00:00:00 +0000</lastBuildDate>
     
 	<atom:link href="/tags/plot/index.xml" rel="self" type="application/rss+xml" />
     
     
     <item>
-      <title>Transit</title>
-      <link>/post/2019-01-02-transit/</link>
-      <pubDate>Wed, 02 Jan 2019 00:00:00 +0000</pubDate>
+      <title>Airbnb Predictions Project</title>
+      <link>/post/article/</link>
+      <pubDate>Mon, 10 Dec 2018 00:00:00 +0000</pubDate>
       
-      <guid>/post/2019-01-02-transit/</guid>
-      <description>Part 1: The IdeaI was recently in a car with one of my best friends and his new wife1 (also a good friend of mine). We were making our way back from our parents joint 4th of July BBQ in Philadelphia towards Washington DC where we had all attended University. These two friends of mine were coming back down to prepare for their fast approaching move to NYC 2.</description>
+      <guid>/post/article/</guid>
+      <description>IntroductionThis work was originally done for a university project. The project had two main components: a kaggle-esque competition and a full business report. Due to this dual mandate, there are numerous methods attempted that would be omitted. The competition was judged based off of plain accuracy of a held-out testing dataset. This document is a sort of summary of the finalized pipeline. I hope it is helpful to any of you out there.</description>
     </item>
     
     <item>
-      <title>Hello R Markdown</title>
-      <link>/post/2015-07-23-r-rmarkdown/</link>
-      <pubDate>Thu, 23 Jul 2015 21:13:14 -0500</pubDate>
+      <title>A Question on the Efficiency of Transit in Absurd Situations</title>
+      <link>/post/2019-01-02-transit/</link>
+      <pubDate>Wed, 22 Aug 2018 00:00:00 +0000</pubDate>
       
-      <guid>/post/2015-07-23-r-rmarkdown/</guid>
-      <description>R MarkdownThis is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see http://rmarkdown.rstudio.com.
-You can embed an R code chunk like this:
-summary(cars)## speed dist ## Min. : 4.0 Min. : 2.00 ## 1st Qu.:12.0 1st Qu.: 26.00 ## Median :15.0 Median : 36.00 ## Mean :15.4 Mean : 42.98 ## 3rd Qu.</description>
+      <guid>/post/2019-01-02-transit/</guid>
+      <description>Part 1: The IdeaI was recently in a car with one of my best friends and his new wife1 (also a good friend of mine). We were making our way back from our parents joint 4th of July BBQ in Philadelphia towards Washington DC where we had all attended University. These two friends of mine were coming back down to prepare for their fast approaching move to NYC 2.</description>
     </item>
     
   </channel>
